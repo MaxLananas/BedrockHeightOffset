@@ -15,6 +15,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
+import java.util.List;
 import java.util.UUID;
 
 public class PlayerConnectionListener implements Listener {
@@ -48,9 +49,16 @@ public class PlayerConnectionListener implements Listener {
 
         if (isBedrock && GeyserSessionReflection.isReady()) {
             UUID uuid = player.getUniqueId();
-            // Retry injection up to 5 times with 2-tick intervals
-            // to handle cases where the Geyser channel isn't ready yet
-            scheduleInjectionWithRetry(uuid, 0);
+
+            // Step 1 (tick 3): patch the session's BedrockDimension so Geyser
+            // stops dropping sections above Y=320 before they reach our interceptor.
+            // Must run after Geyser's connect() which fires on the same tick as join.
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                GeyserSessionReflection.patchSessionDimension(uuid);
+            }, 3L);
+
+            // Step 2 (tick 5+): inject our Netty interceptor.
+            scheduleInjection(uuid, 0);
         }
     }
 
@@ -61,31 +69,34 @@ public class PlayerConnectionListener implements Listener {
         plugin.getPluginConfig().debugLog(event.getPlayer().getName() + " unregistered");
     }
 
-    private void scheduleInjectionWithRetry(UUID uuid, int attempt) {
-        if (attempt >= 5) {
-            plugin.getLogger().warning("[BHO] Failed to inject interceptor after 5 attempts for " + uuid);
+    // ── Netty injection with retry ────────────────────────────────────────────
+
+    private void scheduleInjection(UUID uuid, int attempt) {
+        if (attempt >= 8) {
+            plugin.getLogger().warning("[BHO] Gave up injecting interceptor after 8 attempts for " + uuid);
             return;
         }
 
+        long delay = 5L + attempt * 3L; // ticks: 5, 8, 11, 14 ...
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            boolean success = injectInterceptor(uuid);
-            if (!success) {
+            boolean ok = tryInject(uuid);
+            if (!ok) {
                 plugin.getPluginConfig().debugLog(
-                    "Injection attempt " + (attempt + 1) + " failed for " + uuid + ", retrying..."
+                    "Injection attempt " + (attempt + 1) + " failed for " + uuid + ", retry in "
+                    + (5L + (attempt + 1) * 3L) + " ticks"
                 );
-                scheduleInjectionWithRetry(uuid, attempt + 1);
+                scheduleInjection(uuid, attempt + 1);
             }
-        }, 2L + attempt * 2L);
+        }, delay);
     }
 
-    private boolean injectInterceptor(UUID uuid) {
+    private boolean tryInject(UUID uuid) {
         try {
             Channel channel = GeyserSessionReflection.getBedrockChannel(uuid);
             if (channel == null) return false;
 
             ChannelPipeline pipeline = channel.pipeline();
 
-            // Remove existing handler to avoid duplicates (e.g. on hot reload)
             if (pipeline.get(BedrockPacketInterceptor.HANDLER_NAME) != null) {
                 pipeline.remove(BedrockPacketInterceptor.HANDLER_NAME);
             }
@@ -93,36 +104,44 @@ public class PlayerConnectionListener implements Listener {
             BedrockPacketInterceptor interceptor =
                 new BedrockPacketInterceptor(uuid, registry, plugin);
 
-            // Insert after packet-codec so we see deserialized BedrockPacket objects,
-            // not raw bytes. "packet-codec" is the handler name used by CloudburstMC protocol.
-            if (pipeline.get("packet-codec") != null) {
-                pipeline.addAfter("packet-codec", BedrockPacketInterceptor.HANDLER_NAME, interceptor);
-            } else if (pipeline.get("bedrock-packet-codec") != null) {
-                pipeline.addAfter("bedrock-packet-codec", BedrockPacketInterceptor.HANDLER_NAME, interceptor);
+            // Find the best insertion point in the pipeline.
+            // We need to be AFTER the codec that decodes raw bytes into BedrockPacket objects,
+            // and BEFORE the handler that processes them (Geyser's packet handler).
+            List<String> names = pipeline.names();
+            plugin.getPluginConfig().debugLog("Pipeline handlers: " + names);
+
+            String insertAfter = findCodecHandler(names);
+            if (insertAfter != null) {
+                pipeline.addAfter(insertAfter, BedrockPacketInterceptor.HANDLER_NAME, interceptor);
             } else {
-                // Last resort: insert as first handler
                 pipeline.addFirst(BedrockPacketInterceptor.HANDLER_NAME, interceptor);
-                plugin.getLogger().warning(
-                    "[BHO] packet-codec not found in pipeline for " + uuid
-                    + " — inserted as first handler. Pipeline: " + pipeline.names()
-                );
             }
 
             plugin.getLogger().info("[BHO] Netty interceptor injected for " + uuid
-                + " (pipeline position: after " + getPreviousHandlerName(pipeline) + ")");
+                + " after '" + (insertAfter != null ? insertAfter : "first") + "'");
             return true;
 
         } catch (Exception e) {
-            plugin.getLogger().warning("[BHO] Injection failed for " + uuid + ": " + e.getMessage());
-            plugin.getPluginConfig().debugLog("Injection stack: " + e);
+            plugin.getPluginConfig().debugLog("tryInject error: " + e.getMessage());
             return false;
         }
     }
 
-    private String getPreviousHandlerName(ChannelPipeline pipeline) {
-        String name = BedrockPacketInterceptor.HANDLER_NAME;
-        java.util.List<String> names = pipeline.names();
-        int idx = names.indexOf(name);
-        return idx > 0 ? names.get(idx - 1) : "unknown";
+    /**
+     * Finds the codec handler name where BedrockPackets exist as objects
+     * (not yet encoded to bytes). We insert our handler right after this.
+     */
+    private String findCodecHandler(List<String> names) {
+        // Priority order: these are the known handler names used by CloudburstMC protocol lib
+        String[] candidates = {
+            "packet-codec",
+            "bedrock-packet-codec",
+            "codec",
+            "frame-codec"
+        };
+        for (String candidate : candidates) {
+            if (names.contains(candidate)) return candidate;
+        }
+        return null;
     }
 }

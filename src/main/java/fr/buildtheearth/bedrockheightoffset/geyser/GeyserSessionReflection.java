@@ -6,42 +6,46 @@ import org.geysermc.geyser.api.connection.GeyserConnection;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.UUID;
 import java.util.logging.Logger;
 
 /**
  * Reflection bridge into Geyser internals.
  *
- * Also patches BedrockDimension.OVERWORLD static fields so Geyser
- * stops dropping chunk sections above Y=320 before they reach our
- * Netty interceptor. Without this patch, the translator in
- * JavaLevelChunkWithLightTranslator silently discards any section
- * with bedrockSectionY > maxBedrockSectionY (which is height>>4 - 1).
+ * Two responsibilities:
  *
- * We set the overworld height to 2048 (covers -64 → 1984) so all
- * sections pass through. Our interceptor then rewrites sub-chunk
- * indices to fit the client's actual [-64,320] window.
+ * 1. Retrieve the Netty Channel for a Bedrock session so we can inject
+ *    our packet interceptor into the pipeline.
+ *
+ * 2. Per-session BedrockDimension patch: after Geyser's connect() runs,
+ *    we replace session.bedrockOverworldDimension with a taller instance
+ *    (height=2048) so that JavaLevelChunkWithLightTranslator stops
+ *    discarding sections above Y=320.
+ *
+ *    Why per-session and not static?
+ *    Patching the static BedrockDimension.OVERWORLD field breaks all
+ *    subsequent sessions because Geyser reuses that object for its own
+ *    internal calculations. Patching only the GeyserSession instance
+ *    field is surgical and safe.
  */
 public class GeyserSessionReflection {
 
     private static final Logger LOG = Logger.getLogger("BedrockHeightOffset");
 
-    private static Field  upstreamField       = null;
-    private static Field  bedrockSessionField = null;
-    private static Method getPeerMethod       = null;
-    private static Method getChannelMethod    = null;
-    private static boolean ready              = false;
+    // ── Reflection cache ─────────────────────────────────────────────────────
 
-    // Track whether we successfully patched BedrockDimension
-    private static boolean dimensionPatched   = false;
+    private static Field  upstreamField            = null;
+    private static Field  bedrockSessionField      = null;
+    private static Field  bedrockOverworldDimField = null;
+    private static Field  bedrockDimField          = null;
+    private static Method getPeerMethod            = null;
+    private static Method getChannelMethod         = null;
+
+    private static boolean ready                   = false;
+
+    // ── Init ─────────────────────────────────────────────────────────────────
 
     public static void initialize() {
-        initReflection();
-        patchBedrockDimension();
-    }
-
-    private static void initReflection() {
         try {
             Class<?> geyserSession   = Class.forName("org.geysermc.geyser.session.GeyserSession");
             Class<?> upstreamSession = Class.forName("org.geysermc.geyser.session.UpstreamSession");
@@ -53,6 +57,13 @@ public class GeyserSessionReflection {
 
             bedrockSessionField = upstreamSession.getDeclaredField("session");
             bedrockSessionField.setAccessible(true);
+
+            // These two fields hold the dimension objects inside GeyserSession
+            bedrockOverworldDimField = geyserSession.getDeclaredField("bedrockOverworldDimension");
+            bedrockOverworldDimField.setAccessible(true);
+
+            bedrockDimField = geyserSession.getDeclaredField("bedrockDimension");
+            bedrockDimField.setAccessible(true);
 
             getPeerMethod = bedrockSession.getMethod("getPeer");
             getPeerMethod.setAccessible(true);
@@ -69,83 +80,62 @@ public class GeyserSessionReflection {
         }
     }
 
+    // ── Per-session dimension patch ───────────────────────────────────────────
+
     /**
-     * Patches the static BedrockDimension.OVERWORLD instance so Geyser's
-     * chunk translator stops filtering out sections above Y=320.
+     * Replaces the GeyserSession's bedrockOverworldDimension with a new
+     * BedrockDimension instance that has height=2048 instead of 384.
      *
-     * BedrockDimension has final fields: minY, height, doUpperHeightWarn, bedrockId.
-     * We use reflection + Unsafe (or setAccessible on modern JDK with --add-opens)
-     * to overwrite them.
+     * This makes JavaLevelChunkWithLightTranslator's bounds check pass for
+     * all sections from Y=-64 up to Y=1984, so none are silently dropped
+     * before reaching our Netty interceptor.
      *
-     * Target: height = 2048  (covers Y=-64 to Y=1984, more than enough for Y=1952)
-     *         minY   = -64   (unchanged)
-     *         doUpperHeightWarn = false (suppress the console warning)
+     * Must be called AFTER Geyser's connect() has run (i.e. after the
+     * player has spawned), because connect() sets bedrockOverworldDimension.
      */
-    private static void patchBedrockDimension() {
+    public static void patchSessionDimension(UUID javaUuid) {
+        if (!ready) return;
         try {
+            GeyserConnection conn = GeyserApi.api().connectionByUuid(javaUuid);
+            if (conn == null) return;
+
+            // Build a new BedrockDimension(minY=-64, height=2048, doUpperHeightWarn=false, id=0)
             Class<?> dimClass = Class.forName("org.geysermc.geyser.level.BedrockDimension");
+            Object tallDim = dimClass
+                .getDeclaredConstructor(int.class, int.class, boolean.class, int.class)
+                .newInstance(-64, 2048, false, 0);
 
-            // Get the static OVERWORLD field
-            Field overworldField = dimClass.getDeclaredField("OVERWORLD");
-            overworldField.setAccessible(true);
-            Object overworld = overworldField.get(null);
+            // Read the current overworld dim to check if it's already patched
+            Object current = bedrockOverworldDimField.get(conn);
+            Field heightF  = dimClass.getDeclaredField("height");
+            heightF.setAccessible(true);
+            int currentHeight = (int) heightF.get(current);
 
-            // Patch: height → 2048
-            setFinalField(overworld, "height", 2048);
-            // Patch: doUpperHeightWarn → false  (kills the console warning)
-            setFinalField(overworld, "doUpperHeightWarn", false);
+            if (currentHeight >= 2048) {
+                LOG.fine("[BHO] Session dimension already patched for " + javaUuid);
+                return;
+            }
 
-            // Verify
-            Field heightField = dimClass.getDeclaredField("height");
-            heightField.setAccessible(true);
-            int newHeight = (int) heightField.get(overworld);
+            // Replace overworld dimension on the session
+            bedrockOverworldDimField.set(conn, tallDim);
 
-            dimensionPatched = true;
-            LOG.info("[BHO] BedrockDimension.OVERWORLD patched: height=" + newHeight
-                + " (covers Y=-64 to Y=" + (-64 + newHeight) + ")");
+            // Also replace bedrockDimension if it currently points to the overworld
+            Object currentDim = bedrockDimField.get(conn);
+            if (currentDim == current) {
+                bedrockDimField.set(conn, tallDim);
+            }
+
+            LOG.info("[BHO] Session dimension patched for " + javaUuid
+                + " | height: " + currentHeight + " → 2048"
+                + " (covers Y=-64 to Y=" + (-64 + 2048) + ")");
 
         } catch (Exception e) {
-            LOG.severe("[BHO] BedrockDimension patch FAILED: " + e.getMessage());
-            LOG.severe("[BHO] Chunks above Y=320 will still be dropped by Geyser.");
+            LOG.warning("[BHO] patchSessionDimension failed for " + javaUuid + ": " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    /**
-     * Removes the final modifier from a field and sets its value using sun.misc.Unsafe
-     * to bypass Java's final field protection (works on JDK 17-21 with Paper's module setup).
-     */
-    private static void setFinalField(Object target, String fieldName, Object value) throws Exception {
-        Class<?> cls = target.getClass();
-        Field field = null;
-
-        // Walk class hierarchy
-        while (field == null && cls != null) {
-            try {
-                field = cls.getDeclaredField(fieldName);
-            } catch (NoSuchFieldException e) {
-                cls = cls.getSuperclass();
-            }
-        }
-
-        if (field == null) throw new NoSuchFieldException(fieldName + " not found in hierarchy");
-        field.setAccessible(true);
-
-        // Use sun.misc.Unsafe for final field modification (reliable on JDK 21 + Paper)
-        Field unsafeField = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
-        unsafeField.setAccessible(true);
-        sun.misc.Unsafe unsafe = (sun.misc.Unsafe) unsafeField.get(null);
-
-        long offset = unsafe.objectFieldOffset(field);
-
-        if (value instanceof Integer i) {
-            unsafe.putInt(target, offset, i);
-        } else if (value instanceof Boolean b) {
-            unsafe.putBoolean(target, offset, b);
-        } else {
-            unsafe.putObject(target, offset, value);
-        }
-    }
+    // ── Channel access ────────────────────────────────────────────────────────
 
     public static Channel getBedrockChannel(UUID javaUuid) {
         if (!ready) return null;
@@ -164,6 +154,5 @@ public class GeyserSessionReflection {
         }
     }
 
-    public static boolean isReady()           { return ready;            }
-    public static boolean isDimensionPatched() { return dimensionPatched; }
+    public static boolean isReady() { return ready; }
 }

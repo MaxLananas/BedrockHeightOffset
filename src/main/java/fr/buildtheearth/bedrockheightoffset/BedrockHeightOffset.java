@@ -23,9 +23,8 @@ public class BedrockHeightOffset extends JavaPlugin {
         instance = this;
 
         getLogger().info("╔══════════════════════════════════════════════════╗");
-        getLogger().info("║     BedrockHeightOffset v2.0.0                   ║");
-        getLogger().info("║     Netty-level Bedrock packet interception       ║");
-        getLogger().info("║     BuildTheEarth — terraplusminus Y=-64→1952    ║");
+        getLogger().info("║     BedrockHeightOffset v2.1.0                   ║");
+        getLogger().info("║     BuildTheEarth — Y=-64 to Y=1952              ║");
         getLogger().info("╚══════════════════════════════════════════════════╝");
 
         pluginConfig   = new PluginConfig(this);
@@ -35,10 +34,7 @@ public class BedrockHeightOffset extends JavaPlugin {
         GeyserSessionReflection.initialize();
 
         if (!GeyserSessionReflection.isReady()) {
-            getLogger().severe("[BHO] Geyser reflection failed — check your Geyser version.");
-        }
-        if (!GeyserSessionReflection.isDimensionPatched()) {
-            getLogger().severe("[BHO] BedrockDimension patch failed — chunks above Y=320 will be invisible!");
+            getLogger().severe("[BHO] Geyser reflection unavailable — plugin will have limited effect.");
         }
 
         var pm = getServer().getPluginManager();
@@ -61,10 +57,9 @@ public class BedrockHeightOffset extends JavaPlugin {
         }
 
         getLogger().info(String.format(
-            "[BHO] Active | java=[%d,%d] | bedrock=[-64,320] | triggers=[%d,%d] | dimension_patched=%b",
+            "[BHO] Active | java=[%d,%d] | bedrock=[-64,320] | triggers=[%d,%d]",
             pluginConfig.getJavaMinY(), pluginConfig.getJavaMaxY(),
-            pluginConfig.getUpperTrigger(), pluginConfig.getLowerTrigger(),
-            GeyserSessionReflection.isDimensionPatched()
+            pluginConfig.getUpperTrigger(), pluginConfig.getLowerTrigger()
         ));
     }
 
@@ -75,7 +70,7 @@ public class BedrockHeightOffset extends JavaPlugin {
         instance = null;
     }
 
-    public int    getOffset(java.util.UUID uuid)              { return offsetRegistry.getOffset(uuid); }
-    public double toBedrockY(java.util.UUID uuid, double jY)  { return offsetRegistry.toBedrockY(uuid, jY); }
-    public double toJavaY(java.util.UUID uuid, double bY)     { return offsetRegistry.toJavaY(uuid, bY); }
+    public int    getOffset(java.util.UUID uuid)             { return offsetRegistry.getOffset(uuid); }
+    public double toBedrockY(java.util.UUID uuid, double jY) { return offsetRegistry.toBedrockY(uuid, jY); }
+    public double toJavaY(java.util.UUID uuid, double bY)    { return offsetRegistry.toJavaY(uuid, bY); }
 }
