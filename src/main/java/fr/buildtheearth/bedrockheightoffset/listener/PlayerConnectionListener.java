@@ -47,44 +47,42 @@ public class PlayerConnectionListener implements Listener {
             javaY, data.toBedrockY(javaY)
         ));
 
-        if (isBedrock && GeyserSessionReflection.isReady()) {
-            UUID uuid = player.getUniqueId();
+        if (!isBedrock || !GeyserSessionReflection.isReady()) return;
 
-            // Step 1 (tick 3): patch the session's BedrockDimension so Geyser
-            // stops dropping sections above Y=320 before they reach our interceptor.
-            // Must run after Geyser's connect() which fires on the same tick as join.
-            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                GeyserSessionReflection.patchSessionDimension(uuid);
-            }, 3L);
+        UUID uuid = player.getUniqueId();
 
-            // Step 2 (tick 5+): inject our Netty interceptor.
-            scheduleInjection(uuid, 0);
-        }
+        // Tick 1 — attempt dimension patch immediately.
+        // Geyser's connect() fires synchronously during login, so by the
+        // time PlayerJoinEvent fires the BedrockDimension object exists.
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            GeyserSessionReflection.patchSessionDimension(uuid);
+        });
+
+        // Tick 1 again, then retry — also patch again at tick 4 in case
+        // Geyser recreates the dimension object during the spawn sequence.
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            GeyserSessionReflection.patchSessionDimension(uuid);
+        }, 4L);
+
+        // Netty interceptor injection with retry
+        scheduleInjection(uuid, 0);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
-        UUID uuid = event.getPlayer().getUniqueId();
-        registry.unregister(uuid);
-        plugin.getPluginConfig().debugLog(event.getPlayer().getName() + " unregistered");
+        registry.unregister(event.getPlayer().getUniqueId());
     }
-
-    // ── Netty injection with retry ────────────────────────────────────────────
 
     private void scheduleInjection(UUID uuid, int attempt) {
         if (attempt >= 8) {
-            plugin.getLogger().warning("[BHO] Gave up injecting interceptor after 8 attempts for " + uuid);
+            plugin.getLogger().warning("[BHO] Gave up injecting for " + uuid + " after 8 attempts");
             return;
         }
-
-        long delay = 5L + attempt * 3L; // ticks: 5, 8, 11, 14 ...
+        long delay = 5L + attempt * 3L;
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            boolean ok = tryInject(uuid);
-            if (!ok) {
+            if (!tryInject(uuid)) {
                 plugin.getPluginConfig().debugLog(
-                    "Injection attempt " + (attempt + 1) + " failed for " + uuid + ", retry in "
-                    + (5L + (attempt + 1) * 3L) + " ticks"
-                );
+                    "Injection attempt " + (attempt + 1) + " failed for " + uuid);
                 scheduleInjection(uuid, attempt + 1);
             }
         }, delay);
@@ -96,6 +94,9 @@ public class PlayerConnectionListener implements Listener {
             if (channel == null) return false;
 
             ChannelPipeline pipeline = channel.pipeline();
+            List<String>    names    = pipeline.names();
+
+            plugin.getPluginConfig().debugLog("Pipeline for " + uuid + ": " + names);
 
             if (pipeline.get(BedrockPacketInterceptor.HANDLER_NAME) != null) {
                 pipeline.remove(BedrockPacketInterceptor.HANDLER_NAME);
@@ -104,42 +105,30 @@ public class PlayerConnectionListener implements Listener {
             BedrockPacketInterceptor interceptor =
                 new BedrockPacketInterceptor(uuid, registry, plugin);
 
-            // Find the best insertion point in the pipeline.
-            // We need to be AFTER the codec that decodes raw bytes into BedrockPacket objects,
-            // and BEFORE the handler that processes them (Geyser's packet handler).
-            List<String> names = pipeline.names();
-            plugin.getPluginConfig().debugLog("Pipeline handlers: " + names);
-
-            String insertAfter = findCodecHandler(names);
-            if (insertAfter != null) {
-                pipeline.addAfter(insertAfter, BedrockPacketInterceptor.HANDLER_NAME, interceptor);
+            String anchor = findInsertionPoint(names);
+            if (anchor != null) {
+                pipeline.addAfter(anchor, BedrockPacketInterceptor.HANDLER_NAME, interceptor);
             } else {
                 pipeline.addFirst(BedrockPacketInterceptor.HANDLER_NAME, interceptor);
             }
 
-            plugin.getLogger().info("[BHO] Netty interceptor injected for " + uuid
-                + " after '" + (insertAfter != null ? insertAfter : "first") + "'");
+            plugin.getLogger().info("[BHO] Interceptor injected for " + uuid
+                + " | after=" + (anchor != null ? anchor : "first")
+                + " | pipeline=" + pipeline.names());
             return true;
 
         } catch (Exception e) {
-            plugin.getPluginConfig().debugLog("tryInject error: " + e.getMessage());
+            plugin.getPluginConfig().debugLog("tryInject: " + e.getMessage());
             return false;
         }
     }
 
-    /**
-     * Finds the codec handler name where BedrockPackets exist as objects
-     * (not yet encoded to bytes). We insert our handler right after this.
-     */
-    private String findCodecHandler(List<String> names) {
-        // Priority order: these are the known handler names used by CloudburstMC protocol lib
-        String[] candidates = {
-            "packet-codec",
-            "bedrock-packet-codec",
-            "codec",
-            "frame-codec"
-        };
-        for (String candidate : candidates) {
+    private String findInsertionPoint(List<String> names) {
+        for (String candidate : List.of(
+                "packet-codec",
+                "bedrock-packet-codec",
+                "codec",
+                "frame-codec")) {
             if (names.contains(candidate)) return candidate;
         }
         return null;
