@@ -3,6 +3,7 @@ package fr.buildtheearth.bedrockheightoffset.listener;
 import fr.buildtheearth.bedrockheightoffset.BedrockHeightOffset;
 import fr.buildtheearth.bedrockheightoffset.core.OffsetRegistry;
 import fr.buildtheearth.bedrockheightoffset.core.PlayerOffsetData;
+import fr.buildtheearth.bedrockheightoffset.geyser.GeyserSessionReflection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -38,9 +39,16 @@ public class PlayerMoveListener implements Listener {
             boolean changed = data.updateOffset(newJavaY);
             if (changed) {
                 plugin.getLogger().info(String.format(
-                    "[BHO] Offset recalc %s | jY=%.1f | off=%d | bY=%.1f",
-                    player.getName(), newJavaY, data.getOffset(), data.toBedrockY(newJavaY)
+                    "[BHO] Offset recalc %s | jY=%.1f | off=%d (%d sec) | bY=%.1f",
+                    player.getName(), newJavaY,
+                    data.getOffset(), data.offsetSections(),
+                    data.toBedrockY(newJavaY)
                 ));
+
+                // Re-patch the dimension in case Geyser recreated it
+                // (e.g. after a dimension switch / respawn)
+                GeyserSessionReflection.patchSessionDimension(player.getUniqueId());
+
                 scheduleChunkResend(player);
             }
         }
@@ -60,6 +68,7 @@ public class PlayerMoveListener implements Listener {
         boolean changed = data.updateOffset(newJavaY);
         if (changed) {
             plugin.getPluginConfig().debugLog("Teleport offset recalc: " + data);
+            GeyserSessionReflection.patchSessionDimension(player.getUniqueId());
             scheduleChunkResend(player);
         }
     }
