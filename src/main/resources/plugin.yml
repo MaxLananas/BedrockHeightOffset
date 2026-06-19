@@ -1,8 +1,7 @@
 name: BedrockHeightOffset
-version: '1.0.0'
+version: '2.0.0'
 main: fr.buildtheearth.bedrockheightoffset.BedrockHeightOffset
 api-version: '1.21'
-description: Sliding window Y-offset translation for Bedrock players on BTE extended height worlds.
 authors: [ BuildTheEarth ]
 
 depend:
@@ -20,5 +19,4 @@ commands:
 
 permissions:
   bho.admin:
-    description: Access to BHO admin commands
     default: op

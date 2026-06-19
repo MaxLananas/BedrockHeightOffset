@@ -13,10 +13,10 @@ import org.bukkit.event.player.PlayerTeleportEvent;
 public class PlayerMoveListener implements Listener {
 
     private final BedrockHeightOffset plugin;
-    private final OffsetRegistry registry;
+    private final OffsetRegistry      registry;
 
     public PlayerMoveListener(BedrockHeightOffset plugin, OffsetRegistry registry) {
-        this.plugin = plugin;
+        this.plugin   = plugin;
         this.registry = registry;
     }
 
@@ -24,8 +24,8 @@ public class PlayerMoveListener implements Listener {
     public void onPlayerMove(PlayerMoveEvent event) {
         if (event.getFrom().getBlockY() == event.getTo().getBlockY()) return;
 
-        Player player = event.getPlayer();
-        PlayerOffsetData data = registry.get(player.getUniqueId());
+        Player           player = event.getPlayer();
+        PlayerOffsetData data   = registry.get(player.getUniqueId());
         if (data == null) return;
 
         double newJavaY = event.getTo().getY();
@@ -38,7 +38,7 @@ public class PlayerMoveListener implements Listener {
             boolean changed = data.updateOffset(newJavaY);
             if (changed) {
                 plugin.getLogger().info(String.format(
-                    "[BHO] Offset recalculated for %s | javaY=%.1f | offset=%d | bedrockY=%.1f",
+                    "[BHO] Offset recalc %s | jY=%.1f | off=%d | bY=%.1f",
                     player.getName(), newJavaY, data.getOffset(), data.toBedrockY(newJavaY)
                 ));
                 scheduleChunkResend(player);
@@ -50,8 +50,8 @@ public class PlayerMoveListener implements Listener {
     public void onPlayerTeleport(PlayerTeleportEvent event) {
         if (event.getTo() == null) return;
 
-        Player player = event.getPlayer();
-        PlayerOffsetData data = registry.get(player.getUniqueId());
+        Player           player  = event.getPlayer();
+        PlayerOffsetData data    = registry.get(player.getUniqueId());
         if (data == null) return;
 
         double newJavaY = event.getTo().getY();
@@ -59,9 +59,7 @@ public class PlayerMoveListener implements Listener {
 
         boolean changed = data.updateOffset(newJavaY);
         if (changed) {
-            plugin.getPluginConfig().debugLog(String.format(
-                "Teleport triggered offset recalc for %s: %s", player.getName(), data
-            ));
+            plugin.getPluginConfig().debugLog("Teleport offset recalc: " + data);
             scheduleChunkResend(player);
         }
     }
@@ -69,21 +67,14 @@ public class PlayerMoveListener implements Listener {
     private void scheduleChunkResend(Player player) {
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
             if (!player.isOnline()) return;
-
             int radius = Math.min(3, player.getClientViewDistance());
             int cx = player.getLocation().getBlockX() >> 4;
             int cz = player.getLocation().getBlockZ() >> 4;
-
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dz = -radius; dz <= radius; dz++) {
                     player.getWorld().refreshChunk(cx + dx, cz + dz);
                 }
             }
-
-            plugin.getPluginConfig().debugLog(
-                "Chunk resend triggered for " + player.getName()
-                + " radius=" + radius
-            );
         }, plugin.getPluginConfig().getChunkResendDelayTicks());
     }
 }

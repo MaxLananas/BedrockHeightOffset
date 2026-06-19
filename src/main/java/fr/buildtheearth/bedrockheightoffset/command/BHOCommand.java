@@ -16,149 +16,102 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
-import java.util.UUID;
 
 public class BHOCommand implements CommandExecutor, TabCompleter {
 
-    private static final String PREFIX = "§6[BHO] §r";
+    private static final String P = "§6[BHO] §r";
 
     private final BedrockHeightOffset plugin;
-    private final OffsetRegistry registry;
+    private final OffsetRegistry      registry;
 
     public BHOCommand(BedrockHeightOffset plugin, OffsetRegistry registry) {
-        this.plugin = plugin;
+        this.plugin   = plugin;
         this.registry = registry;
     }
 
     @Override
-    public boolean onCommand(@NotNull CommandSender sender,
-                             @NotNull Command command,
-                             @NotNull String label,
-                             @NotNull String[] args) {
-
-        if (!sender.hasPermission("bho.admin")) {
-            sender.sendMessage(PREFIX + "§cPermission denied.");
-            return true;
-        }
-
-        if (args.length == 0) { sendHelp(sender); return true; }
-
+    public boolean onCommand(@NotNull CommandSender s, @NotNull Command c,
+                             @NotNull String l, @NotNull String[] args) {
+        if (!s.hasPermission("bho.admin")) { s.sendMessage(P + "§cPermission denied."); return true; }
+        if (args.length == 0) { sendHelp(s); return true; }
         switch (args[0].toLowerCase()) {
-            case "info"   -> handleInfo(sender);
-            case "offset" -> handleOffset(sender, args);
-            case "list"   -> handleList(sender);
-            case "reload" -> handleReload(sender);
-            case "debug"  -> handleDebug(sender);
-            default       -> sendHelp(sender);
+            case "info"   -> info(s);
+            case "offset" -> offset(s, args);
+            case "list"   -> list(s);
+            case "reload" -> reload(s);
+            case "debug"  -> debug(s);
+            default       -> sendHelp(s);
         }
         return true;
     }
 
-    private void handleInfo(CommandSender sender) {
-        sender.sendMessage(PREFIX + "§6══ BedrockHeightOffset Info ══");
-        sender.sendMessage("  §7Version: §f" + plugin.getPluginMeta().getVersion());
-        sender.sendMessage("  §7Registered players: §f" + registry.size());
-        sender.sendMessage("  §7Java world: §f" + plugin.getPluginConfig().getJavaMinY()
+    private void info(CommandSender s) {
+        s.sendMessage(P + "§6══ BedrockHeightOffset v" + plugin.getPluginMeta().getVersion() + " ══");
+        s.sendMessage("  §7Registered players: §f" + registry.size());
+        s.sendMessage("  §7Java world: §f" + plugin.getPluginConfig().getJavaMinY()
             + " → " + plugin.getPluginConfig().getJavaMaxY());
-        sender.sendMessage("  §7Bedrock window: §f-64 → 320 (height=384)");
-        sender.sendMessage("  §7Upper trigger: §f" + plugin.getPluginConfig().getUpperTrigger());
-        sender.sendMessage("  §7Lower trigger: §f" + plugin.getPluginConfig().getLowerTrigger());
-        sender.sendMessage("  §7Floodgate: §f" + GeyserHook.isFloodgateAvailable());
-        sender.sendMessage("  §7Geyser: §f" + GeyserHook.isGeyserAvailable());
-        sender.sendMessage("  §7Debug: §f" + plugin.getPluginConfig().isDebug());
-        sender.sendMessage("  §7Bedrock-only: §f" + plugin.getPluginConfig().isBedrockOnly());
+        s.sendMessage("  §7Bedrock window: §f-64 → 320");
+        s.sendMessage("  §7Triggers: §fupper=" + plugin.getPluginConfig().getUpperTrigger()
+            + " lower=" + plugin.getPluginConfig().getLowerTrigger());
+        s.sendMessage("  §7Floodgate: §f" + GeyserHook.isFloodgateAvailable());
+        s.sendMessage("  §7Debug: §f" + plugin.getPluginConfig().isDebug());
     }
 
-    private void handleOffset(CommandSender sender, String[] args) {
-        if (args.length < 2) {
-            sender.sendMessage(PREFIX + "§cUsage: /bho offset <player>");
-            return;
-        }
-
-        Player target = Bukkit.getPlayer(args[1]);
-        if (target == null) {
-            sender.sendMessage(PREFIX + "§cPlayer '" + args[1] + "' not found.");
-            return;
-        }
-
-        PlayerOffsetData data = registry.get(target.getUniqueId());
-        if (data == null) {
-            sender.sendMessage(PREFIX + "§e" + target.getName()
-                + " is not registered (Java player or plugin inactive).");
-            return;
-        }
-
-        sender.sendMessage(PREFIX + "§6══ Offset: " + target.getName() + " ══");
-        sender.sendMessage("  §7Type: " + (data.isBedrockPlayer() ? "§aBEDROCK" : "§9JAVA"));
-        sender.sendMessage("  §7Offset: §f" + data.getOffset() + " blocks");
-        sender.sendMessage("  §7Java Y: §f" + String.format("%.2f", data.getLastJavaY()));
-        sender.sendMessage("  §7Bedrock Y: §f" + String.format("%.2f",
-            data.toBedrockY(data.getLastJavaY())));
-        sender.sendMessage("  §7Offset changes: §f" + data.getOffsetChangeCount());
-        sender.sendMessage("  §7Last change: §f"
-            + ((System.currentTimeMillis() - data.getLastOffsetChange()) / 1000) + "s ago");
+    private void offset(CommandSender s, String[] args) {
+        if (args.length < 2) { s.sendMessage(P + "§cUsage: /bho offset <player>"); return; }
+        Player t = Bukkit.getPlayer(args[1]);
+        if (t == null) { s.sendMessage(P + "§cPlayer not found."); return; }
+        PlayerOffsetData d = registry.get(t.getUniqueId());
+        if (d == null) { s.sendMessage(P + "§eNot registered."); return; }
+        s.sendMessage(P + "§6══ " + t.getName() + " ══");
+        s.sendMessage("  §7Type: "       + (d.isBedrockPlayer() ? "§aBEDROCK" : "§9JAVA"));
+        s.sendMessage("  §7Offset: §f"   + d.getOffset() + " blocks (" + (d.getOffset() >> 4) + " sections)");
+        s.sendMessage("  §7Java Y: §f"   + String.format("%.2f", d.getLastJavaY()));
+        s.sendMessage("  §7Bedrock Y: §f"+ String.format("%.2f", d.toBedrockY(d.getLastJavaY())));
+        s.sendMessage("  §7Changes: §f"  + d.getOffsetChangeCount());
     }
 
-    private void handleList(CommandSender sender) {
+    private void list(CommandSender s) {
         Collection<PlayerOffsetData> all = registry.all();
-        if (all.isEmpty()) {
-            sender.sendMessage(PREFIX + "§eNo players registered.");
-            return;
-        }
-        sender.sendMessage(PREFIX + "§6══ Registered players (" + all.size() + ") ══");
-        for (PlayerOffsetData data : all) {
-            sender.sendMessage(String.format(
-                "  %s §f%s §7| off=%d | jY=%.0f | bY=%.0f",
-                data.isBedrockPlayer() ? "§a[BE]" : "§9[JE]",
-                data.getName(), data.getOffset(),
-                data.getLastJavaY(), data.toBedrockY(data.getLastJavaY())
-            ));
+        if (all.isEmpty()) { s.sendMessage(P + "§eNo players registered."); return; }
+        s.sendMessage(P + "§6══ Players (" + all.size() + ") ══");
+        for (PlayerOffsetData d : all) {
+            s.sendMessage(String.format("  %s §f%s §7off=%d jY=%.0f bY=%.0f",
+                d.isBedrockPlayer() ? "§a[BE]" : "§9[JE]",
+                d.getName(), d.getOffset(), d.getLastJavaY(), d.toBedrockY(d.getLastJavaY())));
         }
     }
 
-    private void handleReload(CommandSender sender) {
+    private void reload(CommandSender s) {
         plugin.getPluginConfig().reload();
-        sender.sendMessage(PREFIX + "§aConfiguration reloaded.");
+        s.sendMessage(P + "§aConfig reloaded.");
     }
 
-    private void handleDebug(CommandSender sender) {
-        boolean current = plugin.getPluginConfig().isDebug();
-        plugin.getConfig().set("debug", !current);
+    private void debug(CommandSender s) {
+        boolean cur = plugin.getPluginConfig().isDebug();
+        plugin.getConfig().set("debug", !cur);
         plugin.saveConfig();
         plugin.getPluginConfig().reload();
-        sender.sendMessage(PREFIX + "Debug mode: " + (!current ? "§aENABLED" : "§cDISABLED"));
+        s.sendMessage(P + "Debug: " + (!cur ? "§aON" : "§cOFF"));
     }
 
-    private void sendHelp(CommandSender sender) {
-        sender.sendMessage(PREFIX + "§6══ Commands ══");
-        sender.sendMessage("  §6/bho info §7— general info");
-        sender.sendMessage("  §6/bho offset <player> §7— player offset details");
-        sender.sendMessage("  §6/bho list §7— list all registered players");
-        sender.sendMessage("  §6/bho reload §7— reload config");
-        sender.sendMessage("  §6/bho debug §7— toggle debug mode");
+    private void sendHelp(CommandSender s) {
+        s.sendMessage(P + "§6/bho info §7| §6offset <p> §7| §6list §7| §6reload §7| §6debug");
     }
 
     @Override
-    public List<String> onTabComplete(@NotNull CommandSender sender,
-                                      @NotNull Command command,
-                                      @NotNull String label,
-                                      @NotNull String[] args) {
-        if (args.length == 1)
-            return filter(Arrays.asList("info", "offset", "list", "reload", "debug"), args[0]);
-
+    public List<String> onTabComplete(@NotNull CommandSender s, @NotNull Command c,
+                                      @NotNull String l, @NotNull String[] args) {
+        if (args.length == 1) return filter(Arrays.asList("info","offset","list","reload","debug"), args[0]);
         if (args.length == 2 && args[0].equalsIgnoreCase("offset")) {
-            List<String> names = new ArrayList<>();
-            Bukkit.getOnlinePlayers().forEach(p -> names.add(p.getName()));
-            return filter(names, args[1]);
+            List<String> n = new ArrayList<>();
+            Bukkit.getOnlinePlayers().forEach(p -> n.add(p.getName()));
+            return filter(n, args[1]);
         }
         return List.of();
     }
 
-    private List<String> filter(List<String> list, String prefix) {
-        List<String> result = new ArrayList<>();
-        for (String s : list) {
-            if (s.toLowerCase().startsWith(prefix.toLowerCase())) result.add(s);
-        }
-        return result;
+    private List<String> filter(List<String> l, String p) {
+        return l.stream().filter(s -> s.toLowerCase().startsWith(p.toLowerCase())).toList();
     }
 }

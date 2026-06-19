@@ -16,42 +16,26 @@ public class OffsetRegistry {
         return data;
     }
 
-    public void unregister(UUID uuid) {
-        registry.remove(uuid);
-    }
-
-    public PlayerOffsetData get(UUID uuid) {
-        return registry.get(uuid);
-    }
-
-    public boolean isRegistered(UUID uuid) {
-        return registry.containsKey(uuid);
-    }
-
-    public Collection<PlayerOffsetData> all() {
-        return Collections.unmodifiableCollection(registry.values());
-    }
-
-    public int size() {
-        return registry.size();
-    }
+    public void unregister(UUID uuid) { registry.remove(uuid); }
+    public PlayerOffsetData get(UUID uuid) { return registry.get(uuid); }
+    public boolean isRegistered(UUID uuid) { return registry.containsKey(uuid); }
+    public Collection<PlayerOffsetData> all() { return Collections.unmodifiableCollection(registry.values()); }
+    public int size() { return registry.size(); }
 
     public double toBedrockY(UUID uuid, double javaY) {
-        PlayerOffsetData data = registry.get(uuid);
-        return data != null ? data.toBedrockY(javaY) : javaY;
+        PlayerOffsetData d = registry.get(uuid);
+        return d != null ? d.toBedrockY(javaY) : javaY;
     }
 
     public double toJavaY(UUID uuid, double bedrockY) {
-        PlayerOffsetData data = registry.get(uuid);
-        return data != null ? data.toJavaY(bedrockY) : bedrockY;
+        PlayerOffsetData d = registry.get(uuid);
+        return d != null ? d.toJavaY(bedrockY) : bedrockY;
     }
 
     public int getOffset(UUID uuid) {
-        PlayerOffsetData data = registry.get(uuid);
-        return data != null ? data.getOffset() : 0;
+        PlayerOffsetData d = registry.get(uuid);
+        return d != null ? d.getOffset() : 0;
     }
 
-    public void clear() {
-        registry.clear();
-    }
+    public void clear() { registry.clear(); }
 }
