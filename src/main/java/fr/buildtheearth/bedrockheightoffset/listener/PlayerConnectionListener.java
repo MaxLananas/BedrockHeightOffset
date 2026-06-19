@@ -11,9 +11,8 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
-/**
- * Gère l'enregistrement/désenregistrement des joueurs dans le registre d'offsets.
- */
+import java.util.UUID;
+
 public class PlayerConnectionListener implements Listener {
 
     private final BedrockHeightOffset plugin;
@@ -27,45 +26,29 @@ public class PlayerConnectionListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-
-        // Déterminer si joueur Bedrock
         boolean isBedrock = GeyserHook.isBedrockPlayer(player);
 
-        // Si bedrock-only est activé et que ce n'est pas un joueur Bedrock, ignorer
-        if (plugin.getPluginConfig().isBedrockOnly() && !isBedrock) {
-            return;
-        }
+        if (plugin.getPluginConfig().isBedrockOnly() && !isBedrock) return;
 
-        // Récupérer la position Y actuelle
         double javaY = player.getLocation().getY();
-
-        // Enregistrer dans le registre
         PlayerOffsetData data = registry.register(
-            player.getUniqueId(),
+            player.getUniqueId(), player.getName(), isBedrock, javaY
+        );
+
+        plugin.getLogger().info(String.format(
+            "[BHO] %s %s registered | offset=%d | javaY=%.1f | bedrockY=%.1f",
             player.getName(),
-            isBedrock,
-            javaY
-        );
-
-        plugin.getPluginConfig().debugLog(
-            "Joueur enregistré : " + data
-        );
-
-        plugin.getLogger().info(
-            "[BHO] " + player.getName()
-            + (isBedrock ? " [BEDROCK]" : " [JAVA]")
-            + " → offset=" + data.getOffset()
-            + ", javaY=" + String.format("%.1f", javaY)
-            + ", bedrockY=" + String.format("%.1f", data.toBedrockY(javaY))
-        );
+            isBedrock ? "[BEDROCK]" : "[JAVA]",
+            data.getOffset(), javaY, data.toBedrockY(javaY)
+        ));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
-        Player player = event.getPlayer();
-        if (registry.isRegistered(player.getUniqueId())) {
-            registry.unregister(player.getUniqueId());
-            plugin.getPluginConfig().debugLog("Joueur désenregistré : " + player.getName());
+        UUID uuid = event.getPlayer().getUniqueId();
+        if (registry.isRegistered(uuid)) {
+            registry.unregister(uuid);
+            plugin.getPluginConfig().debugLog(event.getPlayer().getName() + " unregistered");
         }
     }
 }

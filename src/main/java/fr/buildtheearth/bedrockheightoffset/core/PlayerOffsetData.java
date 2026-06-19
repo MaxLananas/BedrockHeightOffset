@@ -5,38 +5,23 @@ import lombok.Setter;
 
 import java.util.UUID;
 
-/**
- * Données d'offset Y pour un joueur connecté.
- *
- * Concept sliding window :
- *   bedrockY = javaY - offset
- *   javaY    = bedrockY + offset
- *
- * L'offset est toujours un multiple de 16 (alignement sub-chunks).
- */
 @Getter
 public class PlayerOffsetData {
 
+    // Bedrock window constants
+    public static final int BEDROCK_MIN   = -64;
+    public static final int BEDROCK_MAX   = 320;
+    public static final int BEDROCK_CENTER = 128; // BEDROCK_MIN + 384/2
+
     private final UUID uuid;
     private final String name;
-
-    /** L'offset actuel en blocs. Multiple de 16. */
-    @Setter
-    private volatile int offset;
-
-    /** La dernière position Y Java connue. */
-    @Setter
-    private volatile double lastJavaY;
-
-    /** True si le joueur est Bedrock (Floodgate). */
     private final boolean bedrockPlayer;
 
-    /** Timestamp du dernier recalcul d'offset. */
-    @Setter
-    private volatile long lastOffsetChange;
+    @Setter private volatile int offset;
+    @Setter private volatile double lastJavaY;
+    @Setter private volatile long lastOffsetChange;
 
-    /** Nombre de recalculs d'offset depuis la connexion. */
-    private volatile int offsetChangeCount;
+    @Getter private volatile int offsetChangeCount;
 
     public PlayerOffsetData(UUID uuid, String name, boolean bedrockPlayer, double initialJavaY) {
         this.uuid = uuid;
@@ -48,23 +33,17 @@ public class PlayerOffsetData {
         this.offsetChangeCount = 0;
     }
 
-    /**
-     * Convertit une coordonnée Y Java → Bedrock.
-     */
     public double toBedrockY(double javaY) {
         return javaY - offset;
     }
 
-    /**
-     * Convertit une coordonnée Y Bedrock → Java.
-     */
     public double toJavaY(double bedrockY) {
         return bedrockY + offset;
     }
 
     /**
-     * Met à jour l'offset et incrémente le compteur.
-     * @return true si l'offset a réellement changé
+     * Updates the offset based on the new Java Y position.
+     * @return true if the offset actually changed
      */
     public boolean updateOffset(double newJavaY) {
         int newOffset = computeOffset(newJavaY);
@@ -78,11 +57,7 @@ public class PlayerOffsetData {
     }
 
     /**
-     * Vérifie si le joueur approche des bords de la fenêtre Bedrock.
-     *
-     * @param upperTrigger Y Bedrock max avant recalcul (ex: 270)
-     * @param lowerTrigger Y Bedrock min avant recalcul (ex: -14)
-     * @return true si un recalcul est nécessaire
+     * Returns true if the player's Bedrock Y is approaching either edge of the sliding window.
      */
     public boolean needsOffsetUpdate(int upperTrigger, int lowerTrigger) {
         double bedrockY = toBedrockY(lastJavaY);
@@ -90,36 +65,22 @@ public class PlayerOffsetData {
     }
 
     /**
-     * Calcule l'offset optimal pour centrer le joueur dans la fenêtre Bedrock.
-     * Résultat arrondi au multiple de 16 le plus proche.
+     * Computes the optimal offset to center the player inside the Bedrock window.
+     * Result is always a multiple of 16 (section-aligned).
      *
-     * Formule : offset = javaY - BEDROCK_CENTER
-     * BEDROCK_CENTER = -64 + 192 = 128
-     *
-     * Exemples :
-     *   javaY=800 → raw=672 → aligned=672 → bedrockY=128 ✓
-     *   javaY=64  → raw=-64 → aligned=-64 → bedrockY=128 ✓
-     *   javaY=0   → raw=-128 → aligned=-128 → bedrockY=128 ✓
+     * offset = round(javaY - BEDROCK_CENTER) aligned to nearest 16
+     * bedrockY = javaY - offset  =>  ≈ BEDROCK_CENTER
      */
     public static int computeOffset(double javaY) {
-        final int BEDROCK_CENTER = 128; // -64 + 384/2
-        final int BEDROCK_MIN = -64;
-        final int BEDROCK_MAX = 320;
-
         int raw = (int) Math.round(javaY) - BEDROCK_CENTER;
-        // Arrondir au multiple de 16 (alignement section)
         int aligned = (int) (Math.round((double) raw / 16.0) * 16);
 
-        // Vérifier que bedrockY reste dans les limites
+        // Clamp so bedrockY stays within [-64, 320]
         int bedrockY = (int) Math.round(javaY) - aligned;
         if (bedrockY < BEDROCK_MIN) {
-            // Réduire l'offset pour rester au-dessus du plancher
-            aligned = (int) Math.round(javaY) - BEDROCK_MIN;
-            aligned = (aligned / 16) * 16;
+            aligned = ((int) Math.round(javaY) - BEDROCK_MIN) & ~0xF; // floor to multiple of 16
         } else if (bedrockY > BEDROCK_MAX) {
-            // Augmenter l'offset pour rester sous le plafond
-            aligned = (int) Math.round(javaY) - BEDROCK_MAX;
-            aligned = (int) Math.ceil((double) aligned / 16.0) * 16;
+            aligned = (int) Math.ceil(((double)((int) Math.round(javaY) - BEDROCK_MAX)) / 16.0) * 16;
         }
 
         return aligned;
@@ -127,7 +88,7 @@ public class PlayerOffsetData {
 
     @Override
     public String toString() {
-        return String.format("PlayerOffsetData{name=%s, offset=%d, lastJavaY=%.1f, bedrockY=%.1f, changes=%d}",
+        return String.format("PlayerOffsetData{name=%s, offset=%d, javaY=%.1f, bedrockY=%.1f, changes=%d}",
             name, offset, lastJavaY, toBedrockY(lastJavaY), offsetChangeCount);
     }
 }

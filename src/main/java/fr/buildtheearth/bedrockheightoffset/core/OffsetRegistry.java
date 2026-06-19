@@ -6,10 +6,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Registre central des offsets Y par joueur.
- * Thread-safe via ConcurrentHashMap + données volatiles.
- */
 public class OffsetRegistry {
 
     private final Map<UUID, PlayerOffsetData> registry = new ConcurrentHashMap<>();
@@ -40,25 +36,16 @@ public class OffsetRegistry {
         return registry.size();
     }
 
-    /**
-     * @return Y Bedrock depuis Y Java, ou javaY si joueur non enregistré
-     */
     public double toBedrockY(UUID uuid, double javaY) {
         PlayerOffsetData data = registry.get(uuid);
         return data != null ? data.toBedrockY(javaY) : javaY;
     }
 
-    /**
-     * @return Y Java depuis Y Bedrock, ou bedrockY si joueur non enregistré
-     */
     public double toJavaY(UUID uuid, double bedrockY) {
         PlayerOffsetData data = registry.get(uuid);
         return data != null ? data.toJavaY(bedrockY) : bedrockY;
     }
 
-    /**
-     * @return offset actuel, ou 0 si non enregistré
-     */
     public int getOffset(UUID uuid) {
         PlayerOffsetData data = registry.get(uuid);
         return data != null ? data.getOffset() : 0;

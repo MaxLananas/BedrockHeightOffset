@@ -10,10 +10,6 @@ import fr.buildtheearth.bedrockheightoffset.core.OffsetRegistry;
 import fr.buildtheearth.bedrockheightoffset.core.PlayerOffsetData;
 import org.bukkit.entity.Player;
 
-/**
- * Intercepte les packets de mise à jour de blocs (Java → Client).
- * Permet de logger/tracker les updates de blocs avec l'offset actuel.
- */
 public class BlockPacketAdapter extends PacketAdapter {
 
     private final OffsetRegistry registry;
@@ -29,8 +25,7 @@ public class BlockPacketAdapter extends PacketAdapter {
 
     @Override
     public void onPacketSending(PacketEvent event) {
-        if (event.isCancelled()) return;
-        if (!plugin.getPluginConfig().isDebug()) return;
+        if (event.isCancelled() || !plugin.getPluginConfig().isDebug()) return;
 
         Player player = event.getPlayer();
         if (player == null) return;
@@ -39,8 +34,8 @@ public class BlockPacketAdapter extends PacketAdapter {
         if (data == null) return;
 
         plugin.getPluginConfig().debugLog(
-            "BLOCK_UPDATE packet → " + player.getName()
-            + " (offset=" + data.getOffset() + ")"
+            event.getPacketType().name() + " -> " + player.getName()
+            + " | offset=" + data.getOffset()
         );
     }
 

@@ -10,10 +10,6 @@ import fr.buildtheearth.bedrockheightoffset.core.OffsetRegistry;
 import fr.buildtheearth.bedrockheightoffset.core.PlayerOffsetData;
 import org.bukkit.entity.Player;
 
-/**
- * Intercepte les packets de mouvement d'entités (Java → Client).
- * Pour debug et tracking de l'état de l'offset.
- */
 public class EntityPacketAdapter extends PacketAdapter {
 
     private final OffsetRegistry registry;
@@ -30,8 +26,7 @@ public class EntityPacketAdapter extends PacketAdapter {
 
     @Override
     public void onPacketSending(PacketEvent event) {
-        if (event.isCancelled()) return;
-        if (!plugin.getPluginConfig().isDebug()) return;
+        if (event.isCancelled() || !plugin.getPluginConfig().isDebug()) return;
 
         Player player = event.getPlayer();
         if (player == null) return;
@@ -40,9 +35,8 @@ public class EntityPacketAdapter extends PacketAdapter {
         if (data == null) return;
 
         plugin.getPluginConfig().debugLog(
-            "ENTITY packet " + event.getPacketType().name()
-            + " → " + player.getName()
-            + " (offset=" + data.getOffset() + ")"
+            event.getPacketType().name() + " -> " + player.getName()
+            + " | offset=" + data.getOffset()
         );
     }
 
