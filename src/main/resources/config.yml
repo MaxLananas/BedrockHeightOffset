@@ -1,6 +1,6 @@
 java-world:
   min-y: -64
-  max-y: 2032
+  max-y: 1952
 
 bedrock-window:
   min-y: -64
@@ -9,8 +9,8 @@ bedrock-window:
   center: 128
 
 triggers:
-  upper: 270
-  lower: -14
+  upper: 256
+  lower: 0
 
 chunk-resend-delay-ticks: 10
 debug: false

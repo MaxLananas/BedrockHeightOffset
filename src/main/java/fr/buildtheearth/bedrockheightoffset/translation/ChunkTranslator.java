@@ -10,24 +10,35 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 /**
- * Translates Bedrock chunk/block packets by applying the Y offset.
+ * Translates Bedrock chunk packets by rewriting sub-chunk index bytes.
  *
- * LevelChunkPacket contains serialized sub-chunk data.
- * Each sub-chunk has a header byte that encodes its index (Y section).
- * The sub-chunk index stored in the header = (worldY >> 4) relative to dimension minY.
+ * Sub-chunk binary format (Bedrock protocol, used since 1.16+):
  *
- * With offset applied:
- *   bedrockSubChunkIndex = javaSubChunkIndex - (offset >> 4)
+ *   For each sub-chunk in LevelChunkPacket:
+ *     byte  version          — 8 = paletted (no index), 9 = paletted (with index)
+ *     byte  storageCount     — number of block storage layers (usually 1 or 2)
+ *     byte  subChunkIndex    — ONLY present in version 9; signed byte
+ *     [storageCount block storages follow]
  *
- * We rewrite the sub-chunk index bytes in the raw ByteBuf payload.
- * The format for each sub-chunk (version 8+):
- *   byte  version  (8 or 9)
- *   byte  storageCount
- *   byte  subChunkIndex   ← this is what we rewrite
- *   ... block palette + data ...
+ *   Block storage:
+ *     byte  header           — bits-per-block encoded as (bitsPerBlock << 1) | isNetworkRuntime
+ *     if bitsPerBlock == 0x7F (127): singleton palette, no word data
+ *       varint runtimeId
+ *     else if bitsPerBlock > 0:
+ *       wordCount = ceil(4096 / floor(32/bitsPerBlock)) words × 4 bytes each
+ *       varint paletteSize
+ *       paletteSize × varint runtimeIds
  *
- * For UpdateBlockPacket and BlockEntityDataPacket, we rewrite the Y
- * coordinate in the Vector3i position field.
+ * The subChunkIndex (version 9 only) is the only field we need to rewrite.
+ * It represents the sub-chunk's Y position in the dimension:
+ *   index = (worldY >> 4) - (dimensionMinY >> 4)
+ *
+ * With our sliding window:
+ *   bedrockIndex = javaIndex - offsetSections
+ *
+ * For version 8, Geyser doesn't include the index byte; the client infers
+ * the sub-chunk position from the packet's subChunksLength and the order
+ * of sub-chunks. We don't need to do anything for version 8.
  */
 public class ChunkTranslator {
 
@@ -35,33 +46,36 @@ public class ChunkTranslator {
 
     private final BedrockHeightOffset plugin;
 
-    // Reflection cache
-    private static final Map<String, Field>  fieldCache  = new ConcurrentHashMap<>();
-    private static final Map<String, Method> methodCache = new ConcurrentHashMap<>();
+    static final Map<String, Field>  FIELD_CACHE  = new ConcurrentHashMap<>();
+    static final Map<String, Method> METHOD_CACHE = new ConcurrentHashMap<>();
 
     public ChunkTranslator(BedrockHeightOffset plugin) {
         this.plugin = plugin;
     }
 
-    // ── LevelChunkPacket ─────────────────────────────────────────────────────
-
     public Object translateChunk(Object packet, PlayerOffsetData data) {
-        try {
-            int offsetSections = data.getOffset() >> 4;
-            if (offsetSections == 0) return packet;
+        int offsetSections = data.offsetSections();
+        if (offsetSections == 0) return packet;
 
-            // Access the ByteBuf payload
-            // LevelChunkPacket.data is a ByteBuf (io.netty.buffer.ByteBuf)
+        try {
             Object buf = getField(packet, "data");
             if (buf == null) return packet;
 
-            // We work on a copy to avoid corrupting Geyser's internal state
-            Object copy = invokeCopy(buf);
-            if (copy == null) return packet;
+            // Work on a retained duplicate so we don't corrupt Geyser's buffer
+            Method retainedDuplicate = buf.getClass().getMethod("retainedDuplicate");
+            Object dup = retainedDuplicate.invoke(buf);
 
-            rewriteSubChunkIndices(copy, offsetSections);
+            boolean modified = rewriteSubChunkIndices(dup, offsetSections);
 
-            setField(packet, "data", copy);
+            if (modified) {
+                // Release the old buffer reference in the packet and set our modified copy
+                Method release = buf.getClass().getMethod("release");
+                release.invoke(buf);
+                setField(packet, "data", dup);
+            } else {
+                Method release = dup.getClass().getMethod("release");
+                release.invoke(dup);
+            }
 
         } catch (Exception e) {
             plugin.getPluginConfig().debugLog("translateChunk error: " + e.getMessage());
@@ -70,129 +84,160 @@ public class ChunkTranslator {
     }
 
     /**
-     * Rewrites sub-chunk index bytes inside the raw serialized chunk ByteBuf.
+     * Scans the raw sub-chunk ByteBuf and rewrites every version-9 sub-chunk
+     * index byte by subtracting offsetSections.
      *
-     * Bedrock sub-chunk format (protocol version 475+, used in 1.21.x):
-     *   Each sub-chunk starts with:
-     *     byte: version (8 = paletted, 9 = paletted with index, 1 = legacy)
-     *   If version == 8:
-     *     byte: storageCount
-     *     byte: subChunkIndex   ← Y index of this sub-chunk in the dimension
-     *   If version == 9:
-     *     byte: storageCount
-     *     byte: subChunkIndex
-     *
-     * We scan the buffer sequentially. For each sub-chunk, we subtract
-     * (offset >> 4) from the subChunkIndex byte.
-     *
-     * The subChunkIndex is a SIGNED byte representing the sub-chunk's
-     * position relative to the dimension's minY / 16.
-     * For overworld: index -4 = Y=-64, index 0 = Y=0, index 19 = Y=304
-     *
-     * With offset=512 (javaY≈640, bedrockY≈128):
-     *   java subchunk 40 (Y=640) → bedrock subchunk 40-32 = 8 (Y=128) ✓
+     * @return true if at least one index was rewritten
      */
-    private void rewriteSubChunkIndices(Object buf, int offsetSections) throws Exception {
-        Class<?> bufClass = buf.getClass().getSuperclass(); // AbstractByteBuf
-        while (!bufClass.getSimpleName().equals("AbstractByteBuf")
-               && !bufClass.getSimpleName().equals("Object")) {
-            bufClass = bufClass.getSuperclass();
-        }
+    private boolean rewriteSubChunkIndices(Object buf, int offsetSections) throws Exception {
+        Class<?> bufClass = buf.getClass();
 
-        // Use ByteBuf methods via reflection since we can't import cloudburstmc classes at compile time
-        Method readableBytes = buf.getClass().getMethod("readableBytes");
-        Method getByte       = buf.getClass().getMethod("getByte", int.class);
-        Method setByte       = buf.getClass().getMethod("setByte", int.class, int.class);
-        Method readerIndex   = buf.getClass().getMethod("readerIndex");
+        Method readerIndex   = bufClass.getMethod("readerIndex");
+        Method readableBytes = bufClass.getMethod("readableBytes");
+        Method getByte       = bufClass.getMethod("getByte", int.class);
+        Method setByte       = bufClass.getMethod("setByte", int.class, int.class);
 
-        int startIdx = (int) readerIndex.invoke(buf);
-        int readable  = (int) readableBytes.invoke(buf);
-
-        int pos = startIdx;
-        int end = startIdx + readable;
+        int pos   = (int) readerIndex.invoke(buf);
+        int end   = pos + (int) readableBytes.invoke(buf);
+        boolean modified = false;
 
         while (pos < end) {
-            int version = ((Number) getByte.invoke(buf, pos)).intValue() & 0xFF;
+            int version = readUByte(buf, getByte, pos);
 
-            if (version == 8 || version == 9) {
+            if (version == 9) {
+                // version 9: has explicit sub-chunk index
                 if (pos + 2 >= end) break;
-                // storageCount at pos+1, subChunkIndex at pos+2
-                int storageCount = ((Number) getByte.invoke(buf, pos + 1)).intValue() & 0xFF;
-                int currentIndex = ((Number) getByte.invoke(buf, pos + 2)).intValue();
 
-                // currentIndex is signed byte
-                if (currentIndex > 127) currentIndex -= 256;
+                int storageCount = readUByte(buf, getByte, pos + 1);
+                int rawIndex     = readSByte(buf, getByte, pos + 2); // signed
+                int newIndex     = rawIndex - offsetSections;
 
-                int newIndex = currentIndex - offsetSections;
                 setByte.invoke(buf, pos + 2, newIndex & 0xFF);
+                modified = true;
 
                 plugin.getPluginConfig().debugLog(
-                    "Sub-chunk index rewritten: " + currentIndex + " → " + newIndex
+                    "SubChunk v9: index " + rawIndex + " → " + newIndex
+                    + " (offset=" + offsetSections + " sections)"
                 );
 
-                // Skip past this sub-chunk header; we can't easily skip the full body
-                // without a full palette parser, but the indices are the only thing we need.
-                // Move to next sub-chunk: we'd need to skip the full storage data.
-                // Since we don't have a full parser here, we scan for the next version byte.
-                // This works because version bytes (1, 8, 9) are distinctive enough.
-                pos += 3;
+                // Advance past header (3 bytes) + storageCount block storages
+                pos = skipStorages(buf, getByte, pos + 3, end, storageCount);
 
-                // Skip over storageCount block storages
-                // Each block storage: 1 byte (bits per block) + palette data
-                // We do a best-effort scan rather than full parse
-                pos = skipBlockStorages(buf, pos, storageCount, end, getByte);
+            } else if (version == 8) {
+                // version 8: no explicit index byte, order implies position
+                // We don't need to rewrite anything; skip past the storage data
+                if (pos + 1 >= end) break;
+                int storageCount = readUByte(buf, getByte, pos + 1);
+                pos = skipStorages(buf, getByte, pos + 2, end, storageCount);
 
             } else if (version == 1) {
-                // Legacy format: 4096 bytes of block data + 2048 bytes metadata
+                // Legacy format: 4096 block bytes + 2048 metadata bytes
                 pos += 1 + 4096 + 2048;
+
             } else {
-                // Unknown/air section or padding — advance one byte and resync
+                // Unknown/padding — advance one byte and attempt resync
                 pos++;
             }
         }
+
+        return modified;
     }
 
     /**
-     * Skips over `count` block storage entries in the buffer.
-     * Block storage format:
-     *   byte: bitsPerBlock | (isRuntime << 1)
-     *   if bitsPerBlock > 0:
-     *     ceil(4096 / (32/bitsPerBlock)) * 4 bytes of word data
-     *     varint: paletteSize
-     *     paletteSize * varint entries
+     * Skips over `count` block storage blobs in the buffer.
+     *
+     * Block storage layout:
+     *   byte: header = (bitsPerBlock << 1) | isNetworkRuntime
+     *   if bitsPerBlock == 0x7F: varint runtimeId  (singleton palette)
+     *   else if bitsPerBlock == 0: varint paletteSize=1, varint runtimeId
+     *   else:
+     *     wordCount = ceil(4096.0 / floor(32.0 / bitsPerBlock)) * 4 bytes
+     *     varint paletteSize
+     *     paletteSize * varint runtimeIds
+     *
+     * @return position after all storages
      */
-    private int skipBlockStorages(Object buf, int pos, int count, int end, Method getByte) throws Exception {
+    private int skipStorages(Object buf, Method getByte, int pos, int end, int count) throws Exception {
         for (int i = 0; i < count && pos < end; i++) {
-            int header    = ((Number) getByte.invoke(buf, pos)).intValue() & 0xFF;
+            int header       = readUByte(buf, getByte, pos);
             int bitsPerBlock = header >> 1;
             pos++;
 
             if (bitsPerBlock == 0x7F) {
-                // Singleton palette — no data, just 1 varint
-                pos = skipVarint(buf, pos, end, getByte);
+                // Singleton: just one varint runtime ID
+                pos = skipVarint(buf, getByte, pos, end);
                 continue;
             }
 
-            if (bitsPerBlock > 0) {
-                int blocksPerWord = 32 / bitsPerBlock;
-                int wordCount     = (int) Math.ceil(4096.0 / blocksPerWord);
-                pos += wordCount * 4;
+            if (bitsPerBlock == 0) {
+                // Zero-bits: palette of size 1, one varint
+                int[] r = readVarint(buf, getByte, pos, end);
+                pos = r[1]; // skip paletteSize (should be 1)
+                pos = skipVarint(buf, getByte, pos, end); // skip the single entry
+                continue;
             }
 
-            // Read palette size varint
-            int[] result  = readVarint(buf, pos, end, getByte);
-            int paletteSize = result[0];
-            pos = result[1];
+            // Compute word data size
+            int blocksPerWord = 32 / bitsPerBlock;
+            int wordCount     = (int) Math.ceil(4096.0 / blocksPerWord);
+            pos += wordCount * 4;
 
-            // Skip palette entries (each is a varint)
+            // Read palette
+            int[] r = readVarint(buf, getByte, pos, end);
+            int paletteSize = r[0];
+            pos = r[1];
+
             for (int j = 0; j < paletteSize && pos < end; j++) {
-                pos = skipVarint(buf, pos, end, getByte);
+                pos = skipVarint(buf, getByte, pos, end);
             }
         }
         return pos;
     }
 
-    private int skipVarint(Object buf, int pos, int end, Method getByte) throws Exception {
+    public Object translateBlockUpdate(Object packet, PlayerOffsetData data) {
+        try {
+            Object pos = getField(packet, "blockPosition");
+            if (pos == null) return packet;
+
+            int javaY    = iGet(invokeMethod(pos, "getY"));
+            int bedrockY = (int) data.toBedrockY(javaY);
+
+            setField(packet, "blockPosition", newVec3i(
+                iGet(invokeMethod(pos, "getX")), bedrockY, iGet(invokeMethod(pos, "getZ"))
+            ));
+        } catch (Exception e) {
+            plugin.getPluginConfig().debugLog("translateBlockUpdate: " + e.getMessage());
+        }
+        return packet;
+    }
+
+    public Object translateBlockEntity(Object packet, PlayerOffsetData data) {
+        try {
+            Object pos = getField(packet, "blockPosition");
+            if (pos == null) return packet;
+
+            int javaY    = iGet(invokeMethod(pos, "getY"));
+            int bedrockY = (int) data.toBedrockY(javaY);
+
+            setField(packet, "blockPosition", newVec3i(
+                iGet(invokeMethod(pos, "getX")), bedrockY, iGet(invokeMethod(pos, "getZ"))
+            ));
+        } catch (Exception e) {
+            plugin.getPluginConfig().debugLog("translateBlockEntity: " + e.getMessage());
+        }
+        return packet;
+    }
+
+    private static int readUByte(Object buf, Method getByte, int pos) throws Exception {
+        return ((Number) getByte.invoke(buf, pos)).intValue() & 0xFF;
+    }
+
+    private static int readSByte(Object buf, Method getByte, int pos) throws Exception {
+        int v = ((Number) getByte.invoke(buf, pos)).intValue() & 0xFF;
+        return v > 127 ? v - 256 : v;
+    }
+
+    private static int skipVarint(Object buf, Method getByte, int pos, int end) throws Exception {
         while (pos < end) {
             int b = ((Number) getByte.invoke(buf, pos)).intValue() & 0xFF;
             pos++;
@@ -201,9 +246,8 @@ public class ChunkTranslator {
         return pos;
     }
 
-    private int[] readVarint(Object buf, int pos, int end, Method getByte) throws Exception {
-        int value  = 0;
-        int shift  = 0;
+    private static int[] readVarint(Object buf, Method getByte, int pos, int end) throws Exception {
+        int value = 0, shift = 0;
         while (pos < end) {
             int b = ((Number) getByte.invoke(buf, pos)).intValue() & 0xFF;
             pos++;
@@ -214,68 +258,16 @@ public class ChunkTranslator {
         return new int[]{value, pos};
     }
 
-    // ── UpdateBlockPacket ─────────────────────────────────────────────────────
-
-    public Object translateBlockUpdate(Object packet, PlayerOffsetData data) {
-        try {
-            Object pos = getField(packet, "blockPosition");
-            if (pos == null) return packet;
-
-            int javaY    = ((Number) invokeMethod(pos, "getY")).intValue();
-            int bedrockY = (int) data.toBedrockY(javaY);
-
-            Object newPos = createVector3i(
-                ((Number) invokeMethod(pos, "getX")).intValue(),
-                bedrockY,
-                ((Number) invokeMethod(pos, "getZ")).intValue()
-            );
-
-            setField(packet, "blockPosition", newPos);
-
-        } catch (Exception e) {
-            plugin.getPluginConfig().debugLog("translateBlockUpdate error: " + e.getMessage());
-        }
-        return packet;
-    }
-
-    // ── BlockEntityDataPacket ─────────────────────────────────────────────────
-
-    public Object translateBlockEntity(Object packet, PlayerOffsetData data) {
-        try {
-            Object pos = getField(packet, "blockPosition");
-            if (pos == null) return packet;
-
-            int javaY    = ((Number) invokeMethod(pos, "getY")).intValue();
-            int bedrockY = (int) data.toBedrockY(javaY);
-
-            Object newPos = createVector3i(
-                ((Number) invokeMethod(pos, "getX")).intValue(),
-                bedrockY,
-                ((Number) invokeMethod(pos, "getZ")).intValue()
-            );
-
-            setField(packet, "blockPosition", newPos);
-
-        } catch (Exception e) {
-            plugin.getPluginConfig().debugLog("translateBlockEntity error: " + e.getMessage());
-        }
-        return packet;
-    }
-
-    // ── Reflection helpers ────────────────────────────────────────────────────
-
     static Object getField(Object obj, String name) throws Exception {
         String key = obj.getClass().getName() + "#" + name;
-        Field f = fieldCache.computeIfAbsent(key, k -> {
+        Field f = FIELD_CACHE.computeIfAbsent(key, k -> {
             Class<?> c = obj.getClass();
             while (c != null) {
                 try {
                     Field found = c.getDeclaredField(name);
                     found.setAccessible(true);
                     return found;
-                } catch (NoSuchFieldException e) {
-                    c = c.getSuperclass();
-                }
+                } catch (NoSuchFieldException e) { c = c.getSuperclass(); }
             }
             return null;
         });
@@ -284,16 +276,14 @@ public class ChunkTranslator {
 
     static void setField(Object obj, String name, Object value) throws Exception {
         String key = obj.getClass().getName() + "#" + name;
-        Field f = fieldCache.computeIfAbsent(key, k -> {
+        Field f = FIELD_CACHE.computeIfAbsent(key, k -> {
             Class<?> c = obj.getClass();
             while (c != null) {
                 try {
                     Field found = c.getDeclaredField(name);
                     found.setAccessible(true);
                     return found;
-                } catch (NoSuchFieldException e) {
-                    c = c.getSuperclass();
-                }
+                } catch (NoSuchFieldException e) { c = c.getSuperclass(); }
             }
             return null;
         });
@@ -301,31 +291,36 @@ public class ChunkTranslator {
     }
 
     static Object invokeMethod(Object obj, String name) throws Exception {
-        String key = obj.getClass().getName() + "#" + name;
-        Method m = methodCache.computeIfAbsent(key, k -> {
+        String key = obj.getClass().getName() + "#" + name + "()";
+        Method m = METHOD_CACHE.computeIfAbsent(key, k -> {
             Class<?> c = obj.getClass();
             while (c != null) {
                 try {
                     Method found = c.getDeclaredMethod(name);
                     found.setAccessible(true);
                     return found;
-                } catch (NoSuchMethodException e) {
-                    c = c.getSuperclass();
-                }
+                } catch (NoSuchMethodException e) { c = c.getSuperclass(); }
             }
             return null;
         });
         return m != null ? m.invoke(obj) : null;
     }
 
-    private Object invokeCopy(Object buf) throws Exception {
-        Method copy = buf.getClass().getMethod("copy");
-        return copy.invoke(buf);
+    static int iGet(Object o) {
+        return o instanceof Number n ? n.intValue() : 0;
     }
 
-    private Object createVector3i(int x, int y, int z) throws Exception {
-        Class<?> vec3iClass = Class.forName("org.cloudburstmc.math.vector.Vector3i");
-        Method from = vec3iClass.getMethod("from", int.class, int.class, int.class);
-        return from.invoke(null, x, y, z);
+    static float fGet(Object o) {
+        return o instanceof Number n ? n.floatValue() : 0f;
+    }
+
+    static Object newVec3i(int x, int y, int z) throws Exception {
+        Class<?> cls = Class.forName("org.cloudburstmc.math.vector.Vector3i");
+        return cls.getMethod("from", int.class, int.class, int.class).invoke(null, x, y, z);
+    }
+
+    static Object newVec3f(float x, float y, float z) throws Exception {
+        Class<?> cls = Class.forName("org.cloudburstmc.math.vector.Vector3f");
+        return cls.getMethod("from", float.class, float.class, float.class).invoke(null, x, y, z);
     }
 }

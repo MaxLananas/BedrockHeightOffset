@@ -15,17 +15,18 @@ import org.bukkit.plugin.java.JavaPlugin;
 public class BedrockHeightOffset extends JavaPlugin {
 
     @Getter private static BedrockHeightOffset instance;
-    @Getter private PluginConfig  pluginConfig;
+    @Getter private PluginConfig   pluginConfig;
     @Getter private OffsetRegistry offsetRegistry;
 
     @Override
     public void onEnable() {
         instance = this;
 
-        getLogger().info("╔══════════════════════════════════════════════╗");
-        getLogger().info("║     BedrockHeightOffset v2.0.0               ║");
-        getLogger().info("║     Netty-level Bedrock packet interception   ║");
-        getLogger().info("╚══════════════════════════════════════════════╝");
+        getLogger().info("╔══════════════════════════════════════════════════╗");
+        getLogger().info("║     BedrockHeightOffset v2.0.0                   ║");
+        getLogger().info("║     Netty-level Bedrock packet interception       ║");
+        getLogger().info("║     BuildTheEarth — terraplusminus Y=-64→1952    ║");
+        getLogger().info("╚══════════════════════════════════════════════════╝");
 
         pluginConfig   = new PluginConfig(this);
         offsetRegistry = new OffsetRegistry();
@@ -33,31 +34,37 @@ public class BedrockHeightOffset extends JavaPlugin {
         GeyserHook.initialize();
         GeyserSessionReflection.initialize();
 
+        if (!GeyserSessionReflection.isReady()) {
+            getLogger().severe("[BHO] Geyser reflection failed — check your Geyser version.");
+        }
+        if (!GeyserSessionReflection.isDimensionPatched()) {
+            getLogger().severe("[BHO] BedrockDimension patch failed — chunks above Y=320 will be invisible!");
+        }
+
         var pm = getServer().getPluginManager();
         pm.registerEvents(new PlayerConnectionListener(this, offsetRegistry), this);
         pm.registerEvents(new PlayerMoveListener(this, offsetRegistry), this);
 
         var cmd = getCommand("bho");
         if (cmd != null) {
-            BHOCommand handler = new BHOCommand(this, offsetRegistry);
-            cmd.setExecutor(handler);
-            cmd.setTabCompleter(handler);
+            BHOCommand h = new BHOCommand(this, offsetRegistry);
+            cmd.setExecutor(h);
+            cmd.setTabCompleter(h);
         }
 
-        // Register players already online (hot reload)
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            boolean isBedrock = GeyserHook.isBedrockPlayer(player);
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            boolean isBedrock = GeyserHook.isBedrockPlayer(p);
             if (pluginConfig.isBedrockOnly() && !isBedrock) continue;
             offsetRegistry.register(
-                player.getUniqueId(), player.getName(),
-                isBedrock, player.getLocation().getY()
+                p.getUniqueId(), p.getName(), isBedrock, p.getLocation().getY()
             );
         }
 
         getLogger().info(String.format(
-            "[BHO] Active | java=[%d,%d] | bedrock=[-64,320] | triggers=[%d,%d]",
+            "[BHO] Active | java=[%d,%d] | bedrock=[-64,320] | triggers=[%d,%d] | dimension_patched=%b",
             pluginConfig.getJavaMinY(), pluginConfig.getJavaMaxY(),
-            pluginConfig.getUpperTrigger(), pluginConfig.getLowerTrigger()
+            pluginConfig.getUpperTrigger(), pluginConfig.getLowerTrigger(),
+            GeyserSessionReflection.isDimensionPatched()
         ));
     }
 

@@ -4,9 +4,10 @@ C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedr
 C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\core\OffsetRegistry.java
 C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\core\PlayerOffsetData.java
 C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\geyser\GeyserHook.java
+C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\geyser\GeyserSessionReflection.java
 C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\listener\PlayerConnectionListener.java
 C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\listener\PlayerMoveListener.java
-C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\protocol\BlockPacketAdapter.java
-C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\protocol\ChunkPacketAdapter.java
-C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\protocol\EntityPacketAdapter.java
-C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\protocol\PositionPacketAdapter.java
+C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\netty\BedrockPacketInterceptor.java
+C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\translation\ChunkTranslator.java
+C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\translation\EntityTranslator.java
+C:\Users\MAXENCE\Desktop\BedrockHeightOffset\src\main\java\fr\buildtheearth\bedrockheightoffset\translation\PositionTranslator.java

@@ -29,29 +29,28 @@ public class PlayerConnectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
-        Player player    = event.getPlayer();
+        Player  player    = event.getPlayer();
         boolean isBedrock = GeyserHook.isBedrockPlayer(player);
 
         if (plugin.getPluginConfig().isBedrockOnly() && !isBedrock) return;
 
-        double javaY          = player.getLocation().getY();
+        double javaY = player.getLocation().getY();
         PlayerOffsetData data = registry.register(
             player.getUniqueId(), player.getName(), isBedrock, javaY
         );
 
         plugin.getLogger().info(String.format(
-            "[BHO] %s %s registered | offset=%d | jY=%.1f | bY=%.1f",
+            "[BHO] %s %s registered | offset=%d (%d sec) | jY=%.1f | bY=%.1f",
             player.getName(), isBedrock ? "[BE]" : "[JE]",
-            data.getOffset(), javaY, data.toBedrockY(javaY)
+            data.getOffset(), data.offsetSections(),
+            javaY, data.toBedrockY(javaY)
         ));
 
         if (isBedrock && GeyserSessionReflection.isReady()) {
-            // Inject our Netty interceptor into Geyser's pipeline.
-            // We delay 2 ticks to ensure Geyser has finished its own connection setup.
             UUID uuid = player.getUniqueId();
-            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                injectInterceptor(uuid);
-            }, 2L);
+            // Retry injection up to 5 times with 2-tick intervals
+            // to handle cases where the Geyser channel isn't ready yet
+            scheduleInjectionWithRetry(uuid, 0);
         }
     }
 
@@ -62,40 +61,68 @@ public class PlayerConnectionListener implements Listener {
         plugin.getPluginConfig().debugLog(event.getPlayer().getName() + " unregistered");
     }
 
-    private void injectInterceptor(UUID uuid) {
+    private void scheduleInjectionWithRetry(UUID uuid, int attempt) {
+        if (attempt >= 5) {
+            plugin.getLogger().warning("[BHO] Failed to inject interceptor after 5 attempts for " + uuid);
+            return;
+        }
+
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            boolean success = injectInterceptor(uuid);
+            if (!success) {
+                plugin.getPluginConfig().debugLog(
+                    "Injection attempt " + (attempt + 1) + " failed for " + uuid + ", retrying..."
+                );
+                scheduleInjectionWithRetry(uuid, attempt + 1);
+            }
+        }, 2L + attempt * 2L);
+    }
+
+    private boolean injectInterceptor(UUID uuid) {
         try {
             Channel channel = GeyserSessionReflection.getBedrockChannel(uuid);
-            if (channel == null) {
-                plugin.getLogger().warning("[BHO] Cannot get Bedrock channel for " + uuid);
-                return;
-            }
+            if (channel == null) return false;
 
             ChannelPipeline pipeline = channel.pipeline();
 
-            // Avoid double-injection on reload
+            // Remove existing handler to avoid duplicates (e.g. on hot reload)
             if (pipeline.get(BedrockPacketInterceptor.HANDLER_NAME) != null) {
                 pipeline.remove(BedrockPacketInterceptor.HANDLER_NAME);
             }
 
-            // Insert BEFORE the first outbound handler (i.e., as close to the client as possible)
-            // Geyser's pipeline typically looks like:
-            //   ... encoder → raknet-codec → [we insert here] → ...
-            // We insert after "packet-codec" which is where BedrockPackets live as objects.
-            BedrockPacketInterceptor interceptor = new BedrockPacketInterceptor(uuid, registry, plugin);
+            BedrockPacketInterceptor interceptor =
+                new BedrockPacketInterceptor(uuid, registry, plugin);
 
-            // Insert before the codec so we intercept decoded objects, not bytes
+            // Insert after packet-codec so we see deserialized BedrockPacket objects,
+            // not raw bytes. "packet-codec" is the handler name used by CloudburstMC protocol.
             if (pipeline.get("packet-codec") != null) {
                 pipeline.addAfter("packet-codec", BedrockPacketInterceptor.HANDLER_NAME, interceptor);
+            } else if (pipeline.get("bedrock-packet-codec") != null) {
+                pipeline.addAfter("bedrock-packet-codec", BedrockPacketInterceptor.HANDLER_NAME, interceptor);
             } else {
-                // Fallback: insert as first handler
+                // Last resort: insert as first handler
                 pipeline.addFirst(BedrockPacketInterceptor.HANDLER_NAME, interceptor);
+                plugin.getLogger().warning(
+                    "[BHO] packet-codec not found in pipeline for " + uuid
+                    + " — inserted as first handler. Pipeline: " + pipeline.names()
+                );
             }
 
-            plugin.getLogger().info("[BHO] Netty interceptor injected for " + uuid);
+            plugin.getLogger().info("[BHO] Netty interceptor injected for " + uuid
+                + " (pipeline position: after " + getPreviousHandlerName(pipeline) + ")");
+            return true;
 
         } catch (Exception e) {
-            plugin.getLogger().severe("[BHO] Failed to inject interceptor for " + uuid + ": " + e.getMessage());
-            e.printStackTrace();
+            plugin.getLogger().warning("[BHO] Injection failed for " + uuid + ": " + e.getMessage());
+            plugin.getPluginConfig().debugLog("Injection stack: " + e);
+            return false;
         }
+    }
+
+    private String getPreviousHandlerName(ChannelPipeline pipeline) {
+        String name = BedrockPacketInterceptor.HANDLER_NAME;
+        java.util.List<String> names = pipeline.names();
+        int idx = names.indexOf(name);
+        return idx > 0 ? names.get(idx - 1) : "unknown";
     }
 }

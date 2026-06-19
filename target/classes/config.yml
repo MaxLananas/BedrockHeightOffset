@@ -1,28 +1,17 @@
-# Java world height (terraplusminus)
 java-world:
   min-y: -64
-  max-y: 2032
+  max-y: 1952
 
-# Bedrock client window (FIXED — do not change)
 bedrock-window:
   min-y: -64
   max-y: 320
   height: 384
-  center: 128  # -64 + 192
+  center: 128
 
-# Sliding window triggers
-# When bedrockY goes above upper-trigger or below lower-trigger,
-# the offset is recalculated and chunks are reloaded.
 triggers:
-  upper: 270   # 320 - 50
-  lower: -14   # -64 + 50
+  upper: 256
+  lower: 0
 
-# How many ticks to wait before resending chunks after offset change
 chunk-resend-delay-ticks: 10
-
-# Debug mode — logs every offset calculation
 debug: false
-
-# Whether to only apply this to Bedrock (Floodgate) players
-# Set to false to apply to ALL players (useful for testing with Java client)
 bedrock-only: true
