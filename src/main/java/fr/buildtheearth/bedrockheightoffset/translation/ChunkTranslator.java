@@ -33,7 +33,6 @@ public class ChunkTranslator {
                 return packet;
             }
 
-            // Get buffer metadata for logging
             Method readableBytes = buf.getClass().getMethod("readableBytes");
             int size = (int) readableBytes.invoke(buf);
 
@@ -41,7 +40,6 @@ public class ChunkTranslator {
                 "translateChunk: bufSize=%d offsetSections=%d", size, offsetSections
             ));
 
-            // Make a full independent copy to avoid shared buffer issues
             Method copy = buf.getClass().getMethod("copy");
             Object newBuf = copy.invoke(buf);
 
@@ -52,12 +50,10 @@ public class ChunkTranslator {
             );
 
             if (rewritten > 0) {
-                // Release the old buffer — Geyser won't need it anymore
                 Method release = buf.getClass().getMethod("release");
                 release.invoke(buf);
                 setField(packet, "data", newBuf);
             } else {
-                // No modifications — release our copy, keep original
                 Method release = newBuf.getClass().getMethod("release");
                 release.invoke(newBuf);
             }

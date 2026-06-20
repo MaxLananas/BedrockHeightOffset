@@ -22,10 +22,8 @@ public class BedrockHeightOffset extends JavaPlugin {
     public void onEnable() {
         instance = this;
 
-        getLogger().info("╔══════════════════════════════════════════════════╗");
-        getLogger().info("║     BedrockHeightOffset v2.1.0                   ║");
+        getLogger().info("║     BedrockHeightOffset v3.7.0                   ║");
         getLogger().info("║     BuildTheEarth — Y=-64 to Y=1952              ║");
-        getLogger().info("╚══════════════════════════════════════════════════╝");
 
         pluginConfig   = new PluginConfig(this);
         offsetRegistry = new OffsetRegistry();

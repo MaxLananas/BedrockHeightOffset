@@ -11,14 +11,13 @@ public class PlayerOffsetData {
     public static final int BEDROCK_MIN    = -64;
     public static final int BEDROCK_MAX    = 320;
     public static final int BEDROCK_HEIGHT = 384;
-    public static final int BEDROCK_CENTER = BEDROCK_MIN + BEDROCK_HEIGHT / 2; // 128
+    public static final int BEDROCK_CENTER = BEDROCK_MIN + BEDROCK_HEIGHT / 2;
 
     public static final int JAVA_MIN = -64;
     public static final int JAVA_MAX = 1952;
 
-    // 64-block margin from each edge before triggering offset recalculation
-    public static final int UPPER_TRIGGER = BEDROCK_MAX - 64; // 256
-    public static final int LOWER_TRIGGER = BEDROCK_MIN + 64; // 0
+    public static final int UPPER_TRIGGER = BEDROCK_MAX - 64;
+    public static final int LOWER_TRIGGER = BEDROCK_MIN + 64;
 
     private final UUID    uuid;
     private final String  name;

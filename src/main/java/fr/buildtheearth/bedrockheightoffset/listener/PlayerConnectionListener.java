@@ -50,7 +50,6 @@ public class PlayerConnectionListener implements Listener {
 
         UUID uuid = player.getUniqueId();
 
-        // Tick 0: if reflection failed statically, try live discovery
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             if (!GeyserSessionReflection.isReady()) {
                 plugin.getLogger().info("[BHO] Attempting live reflection discovery for " + uuid);
@@ -59,15 +58,12 @@ public class PlayerConnectionListener implements Listener {
             GeyserSessionReflection.patchSessionDimension(uuid);
         });
 
-        // Tick 4: repatch (Geyser may rebuild dimension during spawn)
         plugin.getServer().getScheduler().runTaskLater(plugin, () ->
             GeyserSessionReflection.patchSessionDimension(uuid), 4L);
 
-        // Tick 20: repatch again after full spawn sequence
         plugin.getServer().getScheduler().runTaskLater(plugin, () ->
             GeyserSessionReflection.patchSessionDimension(uuid), 20L);
 
-        // Netty injection
         scheduleInjection(uuid, 0);
     }
 

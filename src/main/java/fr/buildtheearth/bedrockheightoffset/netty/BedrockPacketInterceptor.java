@@ -25,7 +25,6 @@ public class BedrockPacketInterceptor extends ChannelDuplexHandler {
     private final PositionTranslator position;
     private final EntityTranslator   entity;
 
-    // Log the first 50 outbound object types to understand what we receive
     private final AtomicLong  msgCount    = new AtomicLong(0);
     private final AtomicBoolean logged50  = new AtomicBoolean(false);
 
@@ -45,7 +44,6 @@ public class BedrockPacketInterceptor extends ChannelDuplexHandler {
 
         long count = msgCount.incrementAndGet();
 
-        // Log first 100 messages to see what types arrive here
         if (count <= 100 && plugin.getPluginConfig().isDebug()) {
             plugin.getLogger().info("[BHO][PIPE] write #" + count
                 + " type=" + msg.getClass().getName()

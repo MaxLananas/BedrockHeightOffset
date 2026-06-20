@@ -45,8 +45,6 @@ public class PlayerMoveListener implements Listener {
                     data.toBedrockY(newJavaY)
                 ));
 
-                // Re-patch the dimension in case Geyser recreated it
-                // (e.g. after a dimension switch / respawn)
                 GeyserSessionReflection.patchSessionDimension(player.getUniqueId());
 
                 scheduleChunkResend(player);

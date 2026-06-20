@@ -37,8 +37,6 @@ public class GeyserSessionReflection {
 
     public static void initialize() {
         try {
-            // Get a live GeyserConnection to inspect its actual runtime type
-            // If no player is online yet, we fall back to class name discovery
             initViaClassNames();
         } catch (Exception e) {
             LOG.severe("[BHO] Reflection init FAILED: " + e.getMessage());
@@ -138,7 +136,6 @@ public class GeyserSessionReflection {
         LOG.info("  getPeer():          " + (getPeerMethod     != null ? "found"                     : "MISSING"));
         LOG.info("  getChannel():       " + (getChannelMethod  != null ? "found"                     : "MISSING"));
 
-        // Minimum requirement: we must at least be able to patch dimensions
         if (bedrockDimField != null && overworldDimField != null && dimHeightField != null) {
             ready = true;
             LOG.info("[BHO] GeyserSessionReflection ready (dimension patch available)");
@@ -171,7 +168,6 @@ public class GeyserSessionReflection {
                 patchDimObject(dim, javaUuid, "bedrockDim");
             }
 
-            // Patch ChunkCache
             if (chunkCacheField != null) {
                 Object cache = chunkCacheField.get(conn);
                 patchChunkCache(cache, javaUuid);
@@ -271,10 +267,8 @@ public class GeyserSessionReflection {
 
             LOG.info("[BHO] Live connection type: " + conn.getClass().getName());
 
-            // Dump all fields of the live session for debugging
             dumpFields(conn.getClass(), "GeyserSession(live)");
 
-            // Retry field discovery on the actual runtime class
             Class<?> sessionClass = conn.getClass();
 
             if (bedrockDimField == null)
@@ -284,7 +278,6 @@ public class GeyserSessionReflection {
                 overworldDimField = findField(sessionClass, null, "bedrockOverworldDimension");
 
             if (upstreamField == null) {
-                // Find UpstreamSession-like field
                 for (Field f : getAllFields(sessionClass)) {
                     if (f.getType().getSimpleName().toLowerCase().contains("upstream")) {
                         f.setAccessible(true);
@@ -302,7 +295,6 @@ public class GeyserSessionReflection {
                     LOG.info("[BHO] Upstream type: " + upstream.getClass().getName());
                     dumpFields(upstream.getClass(), "UpstreamSession(live)");
 
-                    // Find the BedrockServerSession field
                     for (Field f : getAllFields(upstream.getClass())) {
                         Object val = null;
                         try { f.setAccessible(true); val = f.get(upstream); } catch (Exception ignored) {}
@@ -312,7 +304,6 @@ public class GeyserSessionReflection {
                             LOG.info("[BHO] bedrockSession field: " + f.getName()
                                 + " (" + f.getType().getName() + ")");
 
-                            // Now find getPeer and getChannel
                             getPeerMethod = findMethod(val.getClass(), "getPeer");
                             if (getPeerMethod != null) {
                                 Object peer = getPeerMethod.invoke(val);
@@ -345,7 +336,6 @@ public class GeyserSessionReflection {
                 }
             }
 
-            // Update ready status
             if (!ready && bedrockDimField != null && overworldDimField != null
                 && dimHeightField != null) {
                 ready = true;
@@ -382,7 +372,6 @@ public class GeyserSessionReflection {
         if (cls == null) return null;
         List<Field> all = getAllFields(cls);
 
-        // Try by name first
         for (String name : names) {
             for (Field f : all) {
                 if (f.getName().equals(name)) {
@@ -392,7 +381,6 @@ public class GeyserSessionReflection {
             }
         }
 
-        // Fallback: by type
         if (type != null) {
             for (Field f : all) {
                 if (f.getType().isAssignableFrom(type) || type.isAssignableFrom(f.getType())) {

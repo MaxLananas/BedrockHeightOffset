@@ -53,11 +53,11 @@ public class BHOCommand implements CommandExecutor, TabCompleter {
     }
 
     private void info(CommandSender s) {
-        s.sendMessage(P + "§6══ BedrockHeightOffset v2.2.0 ══");
+        s.sendMessage(P + "§6══ BedrockHeightOffset v3.7.0 ══");
         s.sendMessage("  §7Players: §f"       + registry.size());
         s.sendMessage("  §7Java world: §f"    + plugin.getPluginConfig().getJavaMinY()
             + " → " + plugin.getPluginConfig().getJavaMaxY());
-        s.sendMessage("  §7Bedrock window: §f-64 → 320");
+        s.sendMessage("  §7Bedrock window: §f-64 -> 320");
         s.sendMessage("  §7Triggers: §fupper=" + plugin.getPluginConfig().getUpperTrigger()
             + " lower=" + plugin.getPluginConfig().getLowerTrigger());
         s.sendMessage("  §7Floodgate: §f"     + GeyserHook.isFloodgateAvailable());
@@ -102,7 +102,6 @@ public class BHOCommand implements CommandExecutor, TabCompleter {
         s.sendMessage(P + "Debug: " + (!cur ? "§aON" : "§cOFF"));
     }
 
-    /** /bho pipeline <player> — shows the Netty pipeline of a Bedrock player */
     private void pipeline(CommandSender s, String[] args) {
         if (args.length < 2) { s.sendMessage(P + "§cUsage: /bho pipeline <player>"); return; }
         Player t = Bukkit.getPlayer(args[1]);
@@ -120,7 +119,6 @@ public class BHOCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    /** /bho repatch <player> — forces dimension + chunkcache repatch */
     private void repatch(CommandSender s, String[] args) {
         if (args.length < 2) { s.sendMessage(P + "§cUsage: /bho repatch <player>"); return; }
         Player t = Bukkit.getPlayer(args[1]);
