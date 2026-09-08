@@ -49,12 +49,12 @@ public final class SkyWindowConfig {
             props.load(in);
         }
         config.enabled = bool(props, "enabled", config.enabled);
-        config.switchMarginBlocks = Math.max(32, integer(props, "switch-margin-blocks", config.switchMarginBlocks));
-        config.switchCooldownMs = Math.max(250, longVal(props, "switch-cooldown-ms", config.switchCooldownMs));
-        config.freezeMs = Math.max(100, longVal(props, "freeze-ms", config.freezeMs));
+        config.switchMarginBlocks = Math.min(256, Math.max(32, integer(props, "switch-margin-blocks", config.switchMarginBlocks)));
+        config.switchCooldownMs = Math.min(60_000L, Math.max(250L, longVal(props, "switch-cooldown-ms", config.switchCooldownMs)));
+        config.freezeMs = Math.min(5_000L, Math.max(100L, longVal(props, "freeze-ms", config.freezeMs)));
         config.freezeHoldActions = bool(props, "freeze-hold-actions", config.freezeHoldActions);
-        config.chunkCacheMaxChunks = Math.max(64, integer(props, "chunk-cache-max-chunks", config.chunkCacheMaxChunks));
-        config.chunkCacheMaxMegabytes = Math.max(8, integer(props, "chunk-cache-max-megabytes", config.chunkCacheMaxMegabytes));
+        config.chunkCacheMaxChunks = Math.min(32_768, Math.max(64, integer(props, "chunk-cache-max-chunks", config.chunkCacheMaxChunks)));
+        config.chunkCacheMaxMegabytes = Math.min(1_024, Math.max(8, integer(props, "chunk-cache-max-megabytes", config.chunkCacheMaxMegabytes)));
         config.maxOffsetBlocks = alignToSection(integer(props, "max-offset-blocks", config.maxOffsetBlocks));
         String commands = props.getProperty("rewrite-commands", "tp,tppos,teleport").toLowerCase(Locale.ROOT).trim();
         config.rewriteCommands = commands.isEmpty() ? Set.of() : new HashSet<>(Arrays.asList(commands.split("\\s*,\\s*")));
@@ -67,12 +67,12 @@ public final class SkyWindowConfig {
             # SkyWindow configuration
             enabled=true
             # Switch the height window when the player gets within this many blocks
-            # of the top/bottom edge of the client-visible range (min 32).
+            # of the top/bottom edge of the client-visible range (clamped to 32..256).
             switch-margin-blocks=64
-            # Debounce for window switches, in milliseconds.
+            # Debounce for window switches, in milliseconds (clamped to 250..60000).
             switch-cooldown-ms=2000
             # Outbound movement is held for this long after a switch so the client
-            # can be snapped to the new window without fighting stale positions.
+            # can be snapped to the new window without fighting stale positions (clamped to 100..5000).
             freeze-ms=400
             # Block interactions (dig/place) sent during a freeze are queued and replayed
             # afterwards (translated for the frame the client was in) instead of dropped.

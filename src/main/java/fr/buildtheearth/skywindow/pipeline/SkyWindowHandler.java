@@ -3,7 +3,6 @@ package fr.buildtheearth.skywindow.pipeline;
 import fr.buildtheearth.skywindow.SkyWindowConfig;
 import fr.buildtheearth.skywindow.SkyWindowCore;
 import fr.buildtheearth.skywindow.session.SkyWindowSession;
-import fr.buildtheearth.skywindow.translate.CommandYRewrite;
 import fr.buildtheearth.skywindow.translate.InboundYTransforms;
 import fr.buildtheearth.skywindow.translate.OutboundYTransforms;
 import fr.buildtheearth.skywindow.translate.WindowedChunks;
@@ -92,7 +91,10 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         state.channel = null;
         state.offset = 0;
         state.frozen = false;
-        heldActions.clear();
+        Held held;
+        while ((held = heldActions.pollFirst()) != null) {
+            held.promise().trySuccess(); // no orphaned futures behind a dropped replay queue
+        }
         state.resetChunkCache();
     }
 
@@ -141,13 +143,15 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             // from originals on demand, so a switch accumulates no translation error and the server
             // is never re-queried. Where the real dimension already fits the client window, nothing
             // is cached at all: the whole feature stays provably idle.
-            if (windowingApplies()) {
+            SkyWindowSession.WindowConfig w = state.window;
+            boolean applies = w != null && w.needed();
+            if (applies) {
                 state.chunkCache.put(chunk);
             }
             int offset = state.offset;
-            if (offset != 0 && windowingApplies()) {
+            if (offset != 0 && applies) {
                 WindowedChunks.Outcome windowed =
-                    WindowedChunks.window(chunk, state.window.chunkParams(offset));
+                    WindowedChunks.window(chunk, w.chunkParams(offset));
                 if (windowed.anomaly()) {
                     state.chunkAnomalies.increment();
                 } else {
@@ -184,16 +188,12 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             ctx.fireChannelRead(packet);
             return;
         }
-        if (InboundYTransforms.handles(packet)) {
-            Object translated = InboundYTransforms.apply(packet, offset);
-            if (translated != packet) {
-                state.inTranslated.increment();
-                watch("IN", shortName(packet), "y-" + offset);
-            }
-            ctx.fireChannelRead(translated);
-            return;
+        Object translated = InboundYTransforms.apply(packet, offset);
+        if (translated != packet) {
+            state.inTranslated.increment();
+            watch("IN", shortName(packet), "y-" + offset);
         }
-        ctx.fireChannelRead(packet);
+        ctx.fireChannelRead(translated);
     }
 
     // ---------------------------------------------------------------- outbound
@@ -210,13 +210,19 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                 handleFrozenWrite(ctx, packet, promise, offset);
                 return;
             }
+            // Movement is the hottest outbound packet type by an order of magnitude (20-30/s player,
+            // every player). Handle it fully inline: one type check total, and the switch evaluation
+            // and the Y translation reuse the same offset sum.
             if (packet instanceof ServerboundMovePlayerPosPacket pos) {
-                evaluateSwitch(pos.getY() + offset);
-            } else if (packet instanceof ServerboundMovePlayerPosRotPacket posRot) {
-                evaluateSwitch(posRot.getY() + offset);
+                writeMovement(ctx, pos.getY(), offset, promise, pos, false);
+                return;
+            }
+            if (packet instanceof ServerboundMovePlayerPosRotPacket posRot) {
+                writeMovement(ctx, posRot.getY(), offset, promise, posRot, true);
+                return;
             }
             if (offset != 0 && windowingApplies()) {
-                Object translated = OutboundYTransforms.apply(packet, offset, commandConfig());
+                Object translated = OutboundYTransforms.apply(packet, offset, core.commandConfig());
                 if (translated != packet) {
                     state.outTranslated.increment();
                     watch("OUT", shortName(packet), "y+" + offset);
@@ -229,6 +235,27 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             logTransformError("outbound", packet, t);
             ctx.write(packet, promise);
         }
+    }
+
+    /** Writes a movement packet: translate + switch evaluation in one pass (pos vs posRot flag picks the withY shape). */
+    private void writeMovement(ChannelHandlerContext ctx, double clientY, int offset,
+                               ChannelPromise promise, Object packet, boolean withRotation) {
+        if (!windowingApplies()) {
+            ctx.write(packet, promise);
+            return;
+        }
+        double realY = clientY + offset;
+        evaluateSwitch(realY);
+        if (offset == 0) {
+            ctx.write(packet, promise);
+            return;
+        }
+        Object translated = withRotation
+            ? ((ServerboundMovePlayerPosRotPacket) packet).withY(realY)
+            : ((ServerboundMovePlayerPosPacket) packet).withY(realY);
+        state.outTranslated.increment();
+        watch("OUT", withRotation ? "MovePlayerPosRot" : "MovePlayerPos", "y+" + offset);
+        ctx.write(translated, promise);
     }
 
     /**
@@ -246,7 +273,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         boolean blockInteraction = packet instanceof ServerboundPlayerActionPacket
             || packet instanceof ServerboundUseItemOnPacket;
         if (blockInteraction && core.config().freezeHoldActions && heldActions.size() < HELD_QUEUE_LIMIT) {
-            Object translated = OutboundYTransforms.apply(packet, offset, commandConfig());
+            Object translated = OutboundYTransforms.apply(packet, offset, core.commandConfig());
             heldActions.addLast(new Held(translated, promise));
             state.actionsHeld.increment();
             watch("OUT", shortName(packet), "held across switch");
@@ -421,11 +448,6 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
     private boolean windowingApplies() {
         SkyWindowSession.WindowConfig w = state.window;
         return w != null && w.needed();
-    }
-
-    private CommandYRewrite.Config commandConfig() {
-        SkyWindowConfig config = core.config();
-        return new CommandYRewrite.Config(!config.rewriteCommands.isEmpty(), config.rewriteCommands);
     }
 
     private void logTransformError(String direction, MinecraftPacket packet, Throwable t) {

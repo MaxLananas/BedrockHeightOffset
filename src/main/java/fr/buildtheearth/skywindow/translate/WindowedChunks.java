@@ -56,7 +56,7 @@ public final class WindowedChunks {
      * @return the replacement array, or null when nothing needed changing
      */
     public static BlockEntityInfo[] shiftBlockEntities(BlockEntityInfo[] input, Params p) {
-        if (p.offset() == 0) {
+        if (p.offset() == 0 || input.length == 0) {
             return null;
         }
         int maxIndex = p.sectionCount();

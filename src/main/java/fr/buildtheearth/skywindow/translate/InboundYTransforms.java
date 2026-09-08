@@ -36,25 +36,14 @@ public final class InboundYTransforms {
     private InboundYTransforms() {
     }
 
-    public static boolean handles(Object packet) {
-        return packet instanceof ClientboundTeleportEntityPacket
-            || packet instanceof ClientboundEntityPositionSyncPacket
-            || packet instanceof ClientboundAddEntityPacket
-            || packet instanceof ClientboundMoveVehiclePacket
-            || packet instanceof ClientboundMoveMinecartPacket
-            || packet instanceof ClientboundBlockUpdatePacket
-            || packet instanceof ClientboundSectionBlocksUpdatePacket
-            || packet instanceof ClientboundBlockEventPacket
-            || packet instanceof ClientboundBlockDestructionPacket
-            || packet instanceof ClientboundBlockEntityDataPacket
-            || packet instanceof ClientboundLevelEventPacket
-            || packet instanceof ClientboundLevelParticlesPacket
-            || packet instanceof ClientboundSoundPacket
-            || packet instanceof ClientboundExplodePacket
-            || packet instanceof ClientboundSetDefaultSpawnPositionPacket;
-    }
-
-    /** @return the transformed packet, or {@code packet} itself when nothing changed */
+    /**
+     * Single-pass transform: callers pass every packet and compare the result by reference
+     * ({@code != packet} means "was translated"). Unhandled types fall out of the chain untouched -
+     * a separate predicate pass over the same instanceof chain would double the type checks on
+     * every packet for no other benefit.
+     *
+     * @return the transformed packet, or {@code packet} itself when nothing changed
+     */
     public static Object apply(Object packet, int offset) {
         if (offset == 0) {
             return packet;

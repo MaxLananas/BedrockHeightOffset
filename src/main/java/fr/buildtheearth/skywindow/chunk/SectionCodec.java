@@ -108,21 +108,19 @@ public final class SectionCodec {
     private static int skipPalette(byte[] data, int pos, int maxListBits) {
         int bitsPerEntry = readUnsignedByte(data, pos++);
         if (bitsPerEntry == 0) {
-            // Singleton palette: one state id, no storage.
-            skipVarint(data, pos);
-            return varintLength(data, pos) + pos;
+            // Singleton palette: one state id, no storage. One scan, not two.
+            return skipVarint(data, pos);
         }
         if (bitsPerEntry <= maxListBits) {
             int count = readVarint(data, pos);
-            pos = pos + varintLength(data, pos);
+            pos = skipVarint(data, pos);
             for (int i = 0; i < count; i++) {
-                skipVarint(data, pos);
-                pos += varintLength(data, pos);
+                pos = skipVarint(data, pos);
             }
         }
         // Fixed-size long array storage.
         int longCount = readVarint(data, pos);
-        pos += varintLength(data, pos);
+        pos = skipVarint(data, pos);
         long bytes = (long) longCount * 8L;
         if (bytes < 0 || bytes > data.length - pos) {
             throw new FormatException("storage array out of bounds");
@@ -137,8 +135,16 @@ public final class SectionCodec {
         return data[pos] & 0xFF;
     }
 
-    private static void skipVarint(byte[] data, int pos) {
-        readVarint(data, pos);
+    /** @return the byte index just past the varint at {@code pos} (one scan, value discarded). */
+    private static int skipVarint(byte[] data, int pos) {
+        int start = pos;
+        while ((readUnsignedByte(data, pos) & 0x80) != 0) {
+            pos++;
+            if (pos - start > 4) {
+                throw new FormatException("varint too long");
+            }
+        }
+        return pos + 1;
     }
 
     /** @return the decoded value; throws {@link FormatException} on malformed input. */

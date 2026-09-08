@@ -30,6 +30,9 @@ public final class SkyWindowCore {
     private final SkyWindowExtension extension;
     private final Map<GeyserSession, SkyWindowSession> states = new ConcurrentHashMap<>();
     private volatile SkyWindowConfig config = SkyWindowConfig.loadDefault();
+    /** Derived, allocation-free hot-path view of the config; rewritten only when config reloads. */
+    private volatile fr.buildtheearth.skywindow.translate.CommandYRewrite.Config commandConfig =
+        deriveCommandConfig(SkyWindowConfig.loadDefault());
     private volatile boolean worldManagerShifted;
     private volatile boolean running;
     /** Saved reflection handle for the bootstrap field we replaced, for clean restore. */
@@ -61,10 +64,12 @@ public final class SkyWindowCore {
                 Files.writeString(file, SkyWindowConfig.sampleFileContents());
             }
             config = SkyWindowConfig.load(file);
+            commandConfig = deriveCommandConfig(config);
         } catch (IOException e) {
             extension.logger().warning("[SkyWindow] could not read " + file + ", using defaults: " + e.getMessage());
             config = SkyWindowConfig.loadDefault();
         }
+        commandConfig = deriveCommandConfig(config);
     }
 
     /** Config reload without disturbing live sessions: handlers read config through this core. */
@@ -106,6 +111,16 @@ public final class SkyWindowCore {
 
     public SkyWindowConfig config() {
         return config;
+    }
+
+    public fr.buildtheearth.skywindow.translate.CommandYRewrite.Config commandConfig() {
+        return commandConfig;
+    }
+
+    private static fr.buildtheearth.skywindow.translate.CommandYRewrite.Config deriveCommandConfig(
+        SkyWindowConfig config) {
+        return new fr.buildtheearth.skywindow.translate.CommandYRewrite.Config(
+            !config.rewriteCommands.isEmpty(), config.rewriteCommands);
     }
 
     public SkyWindowSession state(GeyserSession session) {
