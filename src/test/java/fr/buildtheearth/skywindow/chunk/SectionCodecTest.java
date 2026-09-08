@@ -189,10 +189,11 @@ class SectionCodecTest {
         byte[] out = SectionCodec.resliceTolerant(payload, 3, 1, 4).data();
         // out[w] = in[w + 1]: slot 0 gets source section 1 (the singleton), slot 1 gets source 2 (the
         // list section), slots 2..3 pad with empty; the 256-long global section leaves the window.
-        byte[] first = Arrays.copyOfRange(out, 0, 8);
-        assertArrayEquals(singletonSection(3, 0), first);
-        int afterFirst = 8;
-        byte[] second = Arrays.copyOfRange(out, afterFirst, afterFirst + 25);
-        assertArrayEquals(listPaletteSection(new int[] {0, 1}, new int[16]), second);
+        byte[] moved1 = singletonSection(3, 0);
+        byte[] moved2 = listPaletteSection(new int[] {0, 1}, new int[16]);
+        assertArrayEquals(moved1, Arrays.copyOfRange(out, 0, moved1.length));
+        assertArrayEquals(moved2, Arrays.copyOfRange(out, moved1.length, moved1.length + moved2.length));
+        assertArrayEquals(SectionCodec.EMPTY_SECTION,
+            Arrays.copyOfRange(out, moved1.length + moved2.length, moved1.length + moved2.length + 8));
     }
 }
