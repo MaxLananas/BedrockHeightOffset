@@ -27,6 +27,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * extension classloader resolves from Geyser's own jars (parent-first), so identity always matches.
  */
 public final class SkyWindowCore {
+    /** What the packet-shape assumptions in docs/ have been verified against; shown by /skywindow doctor. */
+    public static final String TESTED_AGAINST = "Geyser 2.11.2-SNAPSHOT @ 2026-09-08; docs/PACKET-MATRIX.md carries the audit details";
+
     private final SkyWindowExtension extension;
     private final Map<GeyserSession, SkyWindowSession> states = new ConcurrentHashMap<>();
     private volatile SkyWindowConfig config = SkyWindowConfig.loadDefault();
@@ -46,6 +49,7 @@ public final class SkyWindowCore {
     public void start() {
         loadConfig();
         running = config.enabled;
+        startSweeper();
         if (!running) {
             extension.logger().info("[SkyWindow] disabled by configuration");
             return;
@@ -70,6 +74,9 @@ public final class SkyWindowCore {
             config = SkyWindowConfig.loadDefault();
         }
         commandConfig = deriveCommandConfig(config);
+        for (String warning : config.warnings) {
+            extension.logger().warning("[SkyWindow] config: " + warning);
+        }
     }
 
     /** Config reload without disturbing live sessions: handlers read config through this core. */
@@ -88,6 +95,72 @@ public final class SkyWindowCore {
         running = false;
         detachAll();
         unwrapWorldManager();
+    }
+
+    public boolean running() {
+        return running;
+    }
+
+    /**
+     * Periodic safety net: sessions that died between initialize and join never fire
+     * SessionDisconnectEvent (Geyser only fires it once auth/client data exist), which would leak
+     * their state entries on servers with abandoned login attempts. Sweeping closed sessions keeps
+     * the map bounded regardless of event-path gaps.
+     */
+    private void startSweeper() {
+        try {
+            GeyserImpl.getInstance().getScheduledThread().scheduleWithFixedDelay(() -> {
+                try {
+                    for (Map.Entry<GeyserSession, SkyWindowSession> e : states.entrySet()) {
+                        if (e.getKey().isClosed()) {
+                            SkyWindowSession orphan = states.remove(e.getKey());
+                            if (orphan != null) {
+                                orphan.resetChunkCache();
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {
+                    // sweep never must fail the scheduler
+                }
+            }, 60, 60, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Throwable ignored) {
+            // executor unavailable: states still cleaned by the disconnect event path
+        }
+    }
+
+    /** Per-type quarantine registry (deterministic transform failures), for /skywindow doctor. */
+    private final Map<String, String> quarantinedTypes = new ConcurrentHashMap<>();
+
+    public void reportQuarantinedType(String typeName, String reason) {
+        quarantinedTypes.put(typeName, reason);
+    }
+
+    public Map<String, String> quarantinedTypes() {
+        return quarantinedTypes;
+    }
+
+    /** Player names into logs: strip control characters (log-injection hardening, Geyser does the same). */
+    public String safeName(String name) {
+        if (name == null || name.isEmpty()) {
+            return "?";
+        }
+        int bad = -1;
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c < 0x20 || c == 0x7F) {
+                bad = i;
+                break;
+            }
+        }
+        if (bad < 0) {
+            return name.length() > 32 ? name.substring(0, 32) : name;
+        }
+        StringBuilder sb = new StringBuilder(Math.min(name.length(), 32));
+        for (int i = 0; i < Math.min(name.length(), 32); i++) {
+            char c = name.charAt(i);
+            sb.append(c < 0x20 || c == 0x7F ? '?' : c);
+        }
+        return sb.toString();
     }
 
     private void detachAll() {
@@ -127,6 +200,21 @@ public final class SkyWindowCore {
         return states.get(session);
     }
 
+    /** Manual exact-window move for {@code /skywindow window <realY>} (builder tooling). */
+    public boolean forceWindow(GeyserSession session, double realY) {
+        SkyWindowSession state = states.get(session);
+        var channel = state == null ? null : state.channel;
+        if (channel == null || !channel.isActive()) {
+            return false;
+        }
+        var handler = channel.pipeline().get(SkyWindowHandler.HANDLER_NAME);
+        if (handler instanceof SkyWindowHandler h) {
+            h.forceWindow(realY);
+            return true;
+        }
+        return false;
+    }
+
     public int currentOffset(GeyserSession session) {
         SkyWindowSession state = states.get(session);
         return state == null ? 0 : state.offset;
@@ -140,7 +228,7 @@ public final class SkyWindowCore {
 
     public void onSessionInitialized(GeyserConnection connection) {
         GeyserSession session = cast(connection);
-        if (session == null || !running) {
+        if (session == null || !running || session.isClosed()) {
             return;
         }
         SkyWindowConfig cfg = config;
@@ -261,7 +349,17 @@ public final class SkyWindowCore {
             Field field = findWorldManagerField(bootstrap.getClass());
             field.setAccessible(true);
             Object current = field.get(bootstrap);
-            if (!(current instanceof WorldManager manager) || current instanceof ShiftedWorldManager) {
+            if (current instanceof ShiftedWorldManager) {
+                // Already wrapped by a previous enable cycle (e.g. enabled -> reload -> still enabled).
+                // Treat as success: the wrap is live, re-wrapping would double-shift.
+                if (worldManagerField == null) {
+                    worldManagerField = field;
+                    originalWorldManager = null; // restore not owned by us; leave wrapped
+                }
+                worldManagerShifted = true;
+                return;
+            }
+            if (!(current instanceof WorldManager manager)) {
                 throw new IllegalStateException("unexpected world manager: " + current);
             }
             field.set(bootstrap, new ShiftedWorldManager(manager, this));

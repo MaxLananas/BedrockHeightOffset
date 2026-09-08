@@ -48,13 +48,16 @@ public final class InboundYTransforms {
         if (offset == 0) {
             return packet;
         }
-        if (packet instanceof ClientboundTeleportEntityPacket p) {
-            Vector3d pos = p.getPosition();
-            return p.withPosition(Vector3d.from(pos.getX(), pos.getY() - offset, pos.getZ()));
+        if (packet instanceof ClientboundBlockUpdatePacket p) {
+            return p.withEntry(shiftEntry(p.getEntry(), offset));
         }
-        if (packet instanceof ClientboundEntityPositionSyncPacket p) {
-            Vector3d pos = p.getPosition();
-            return p.withPosition(Vector3d.from(pos.getX(), pos.getY() - offset, pos.getZ()));
+        if (packet instanceof ClientboundSectionBlocksUpdatePacket p) {
+            BlockChangeEntry[] in = p.getEntries();
+            BlockChangeEntry[] out = new BlockChangeEntry[in.length];
+            for (int i = 0; i < in.length; i++) {
+                out[i] = shiftEntry(in[i], offset);
+            }
+            return p.withChunkY(p.getChunkY() - (offset >> 4)).withEntries(out);
         }
         if (packet instanceof ClientboundAddEntityPacket p) {
             return p.withY(p.getY() - offset);
@@ -66,16 +69,13 @@ public final class InboundYTransforms {
         if (packet instanceof ClientboundMoveMinecartPacket p) {
             return p.withLerpSteps(shiftSteps(p.getLerpSteps(), offset));
         }
-        if (packet instanceof ClientboundBlockUpdatePacket p) {
-            return p.withEntry(shiftEntry(p.getEntry(), offset));
+        if (packet instanceof ClientboundTeleportEntityPacket p) {
+            Vector3d pos = p.getPosition();
+            return p.withPosition(Vector3d.from(pos.getX(), pos.getY() - offset, pos.getZ()));
         }
-        if (packet instanceof ClientboundSectionBlocksUpdatePacket p) {
-            BlockChangeEntry[] in = p.getEntries();
-            BlockChangeEntry[] out = new BlockChangeEntry[in.length];
-            for (int i = 0; i < in.length; i++) {
-                out[i] = shiftEntry(in[i], offset);
-            }
-            return p.withChunkY(p.getChunkY() - (offset >> 4)).withEntries(out);
+        if (packet instanceof ClientboundEntityPositionSyncPacket p) {
+            Vector3d pos = p.getPosition();
+            return p.withPosition(Vector3d.from(pos.getX(), pos.getY() - offset, pos.getZ()));
         }
         if (packet instanceof ClientboundBlockEventPacket p) {
             return p.withPosition(shift(p.getPosition(), offset));

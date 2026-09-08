@@ -3,6 +3,11 @@ name: build
 on:
   push:
   pull_request:
+  schedule:
+    - cron: '20 6 * * 1'   # weekly drift probe: rebuilds against the newest 2.11.2-SNAPSHOT
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -14,6 +19,8 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
+      - name: Coordinate-math oracle (Python mirror of WindowRules/SectionCodec)
+        run: python3 dev/verify/oracle.py 5
       - name: Compile and test against Geyser ${{ vars.GEYSER_VERSION || '2.11.2-SNAPSHOT' }}
         run: |
           set +e

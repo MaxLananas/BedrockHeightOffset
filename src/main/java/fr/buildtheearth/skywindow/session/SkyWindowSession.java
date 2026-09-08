@@ -160,6 +160,24 @@ public final class SkyWindowSession {
     private final Deque<String> watchRing = new ArrayDeque<>(WATCH_RING_LIMIT);
 
     public final AtomicBoolean switchQueued = new AtomicBoolean();
+    /** True after attach exhausted its retries: the session runs untranslated; surfaced in info/doctor. */
+    public volatile boolean degraded;
+    /** Incremented on login/respawn; stale freeze artifacts (ghosts, held writes) check against it. */
+    public volatile long worldGeneration;
+    /** Offset the client's frame was built with when the current freeze started. */
+    public volatile int frozenFrameOffset;
+    /** The player's physical (real-space) Y from the last movement packet; frame-resolution basis. */
+    public volatile double lastSeenRealY;
+    /** Forced target for /skywindow window <realY>; -1 = none. Consumed by the next performSwitch. */
+    public volatile double forcedRealY = -1;
+    /** Cooldown multiplier (1..8) while switches keep arriving back-to-back (anti oscillation storm). */
+    public volatile int switchBackoff = 1;
+    /** Last completed freeze duration, and running totals for the stats view. */
+    public volatile long lastFreezeNanos;
+    public final java.util.concurrent.atomic.LongAdder freezeTotalNanos = new java.util.concurrent.atomic.LongAdder();
+    public final java.util.concurrent.atomic.LongAdder freezeCount = new java.util.concurrent.atomic.LongAdder();
+    /** Baselines captured by /skywindow stats reset; displays show (sum - baseline). */
+    public final long[] statsBaseline = new long[16];
     public final LongAdder inTranslated = new LongAdder();
     public final LongAdder outTranslated = new LongAdder();
     public final LongAdder chunkWindowed = new LongAdder();
@@ -168,6 +186,9 @@ public final class SkyWindowSession {
     public final LongAdder droppedWhileFrozen = new LongAdder();
     public final LongAdder chunkAnomalies = new LongAdder();
     public final LongAdder actionsHeld = new LongAdder();
+    public final LongAdder heldOverflow = new LongAdder();
+    /** Counter accessor index used by the reset baseline logic; keep in sync with the fields above. */
+    public static final int GHOST_REVERT_LIMIT = 8;
 
     public SkyWindowSession(WindowConfigSource windowConfigSource, int maxChunks, long maxBytes) {
         this.windowConfigSource = windowConfigSource;

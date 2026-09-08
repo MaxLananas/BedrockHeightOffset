@@ -61,11 +61,59 @@
 
     <build>
         <finalName>skywindow-${project.version}</finalName>
+        <resources>
+            <!-- Single source of truth for the version: the pom. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
+                <configuration>
+                    <compilerArgs>
+                        <arg>-Xlint:all,-processing,-serial</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>enforce-no-server-plugin-apis</id>
+                        <goals><goal>enforce</goal></goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[21,)</version>
+                                </requireJavaVersion>
+                                <!--
+                                  This extension talks to Geyser's pipeline only. Depending on a Java
+                                  server API (Bukkit/Spigot/Paper/ProtocolLib) would reintroduce the
+                                  coupling the rewrite exists to remove; the ban keeps it out for good,
+                                  including as a transitive of any future dependency.
+                                -->
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>org.spigotmc:*</exclude>
+                                        <exclude>org.bukkit:*</exclude>
+                                        <exclude>io.papermc.paper:*</exclude>
+                                        <exclude>com.comphenix.protocol:*</exclude>
+                                        <exclude>org.geysermc.geyser:geyser-spigot</exclude>
+                                        <exclude>org.geysermc.geyser:geyser-bukkit</exclude>
+                                    </excludes>
+                                    <searchTransitive>true</searchTransitive>
+                                </bannedDependencies>
+                                <requireUpperBoundDeps/>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

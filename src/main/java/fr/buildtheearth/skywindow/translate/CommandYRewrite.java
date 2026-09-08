@@ -30,6 +30,11 @@ public final class CommandYRewrite {
         if (message == null || message.isEmpty() || offset == 0 || !config.enabled()) {
             return null;
         }
+        if (message.length() > 512) {
+            // A 1.21 chat command is capped at 256 characters by the server anyway; this bound keeps
+            // the rewrite linear-time on adversarial payloads and skips anything that cannot execute.
+            return null;
+        }
         boolean slash = message.startsWith("/");
         String trimmed = slash ? message.substring(1) : message;
         String[] tokens = trimmed.split(" ");
