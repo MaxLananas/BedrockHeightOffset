@@ -1,0 +1,25 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - name: Compile and test against Geyser ${{ vars.GEYSER_VERSION || '2.11.0-SNAPSHOT' }}
+        run: |
+          mvn -B -ntp -Dmaven.repo.local=$RUNNER_TEMP/m2 \
+              -Dgeyser.version=${{ vars.GEYSER_VERSION || '2.11.0-SNAPSHOT' }} \
+              verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BedrockHeightOffset-extension
+          path: target/BedrockHeightOffset-*.jar
