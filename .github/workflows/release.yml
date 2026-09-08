@@ -37,8 +37,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          sha256sum target/skywindow-*.jar > target/skywindow-*.jar.sha256
+          JAR="$(ls target/skywindow-*.jar 2>/dev/null | grep -v original | head -n1)"
+          if [ -z "$JAR" ]; then echo "no built jar found" >&2; exit 1; fi
+          # SHA256SUMS.txt lists the bare jar name (what users verify against), not the target/ path.
+          ( cd target && sha256sum "$(basename "$JAR")" > SHA256SUMS.txt )
           gh release create "$TAG" --verify-tag \
             --title "SkyWindow $TAG" \
-            --notes "Geyser extension: windowed height support for Bedrock players (see README for guarantees and limits). SHA-256 in the checksum asset." \
-            target/skywindow-*.jar "target/$(ls target | grep 'skywindow-.*\.jar\.sha256')"
+            --notes "Geyser extension: windowed height support for Bedrock players (see README for guarantees and limits). Verify with: sha256sum -c SHA256SUMS.txt" \
+            "$JAR" target/SHA256SUMS.txt
