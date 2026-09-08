@@ -74,7 +74,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
     private final SkyWindowCore core;
     private final GeyserLogger logger;
     private final ChannelHandlerContext managerContext;
-    private final HeldQueue held = new HeldQueue(HELD_QUEUE_LIMIT, () -> state.heldOverflow.increment());
+    private final HeldQueue held;
     // Event-loop confined:
     private ChannelHandlerContext ctx;
     private volatile Set<Class<?>> quarantined; // lazily allocated; classes whose transform threw once are skipped
@@ -87,6 +87,9 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         this.core = java.util.Objects.requireNonNull(core);
         this.logger = java.util.Objects.requireNonNull(logger);
         this.managerContext = java.util.Objects.requireNonNull(managerContext);
+        // Built here, not in the field initializer: the overflow lambda must capture a fully
+        // assigned `state` (the compiler is right to reject a forward reference in an initializer).
+        this.held = new HeldQueue(HELD_QUEUE_LIMIT, state.heldOverflow::increment);
     }
 
     @Override

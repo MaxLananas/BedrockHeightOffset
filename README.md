@@ -282,8 +282,10 @@ rather than corrupting.
    bridge — Floodgate optional) that supports **extended build height** (Geyser ≥ the 1.21-era
    "overworld height" work; this repo is built and CI-verified against Geyser
    `2.11.2-SNAPSHOT`, see [Version compatibility](#version-compatibility)).
-2. Build: `mvn package` (needs JDK 21; downloads `geyser-spigot` + JUnit; no other plugins).
-   Prebuilt jars are attached to the Actions runs of this repository.
+2. Get the jar: either a tagged [release](../../releases) (every `vX.Y.Z` tag publishes the jar plus a
+   sha256 file on GitHub Releases), or build it yourself: `mvn package` (needs JDK 21; resolves the Geyser
+   `api` + `core` artifacts and JUnit from the OpenGeyser repository, and enforces that no
+   Bukkit/Spigot/Paper/ProtocolLib dependency ever sneaks in).
 3. Put `skywindow-1.0.0.jar` into the **extensions** folder:
    `plugins/Geyser-Spigot/extensions/` (Spigot/Paper) or `extensions/` next to the standalone jar.
 4. Start the server. A default `config.properties` is written next to the extension. **No Java-side
@@ -302,6 +304,8 @@ To check: `/skywindow doctor` from a Bedrock client (and see below).
 | `switch-cooldown-ms` | `2000` | Minimum gap between switches. |
 | `freeze-ms` | `400` | How long position-bearing outbound packets are held during a switch. |
 | `freeze-hold-actions` | `true` | Queue & replay dig/place packets sent during the freeze instead of dropping them (overflow still drops + ghost-reverts). |
+| `freeze-hold-movement` | `true` | Movement sent during the freeze is held and replayed in the frame it was sent in, instead of dropped. Keep on for elytra/boat/fall continuity across switches. |
+| `announce-switches` | `false` | Send the player a chat line when their window is re-homed. Off by default - switches are meant to be invisible. |
 | `chunk-cache-max-chunks` / `chunk-cache-max-megabytes` | `2048` / `96` | Per-player original-chunk cache bounds (LRU). This is what makes switches seamless; smaller means possible terrain holes right after a switch (self-healing on the next natural chunk send). |
 | `max-offset-blocks` | `0` (auto) | Hard cap on the offset. 0 derives it from the dimension (recommended); set only to shrink reachability, e.g. on a server whose build limit exceeds your testing confidence. |
 | `rewrite-commands` | `tp,tppos,teleport` | Unsigned chat commands whose absolute Y is rewritten. Empty = off. |
@@ -309,6 +313,9 @@ To check: `/skywindow doctor` from a Bedrock client (and see below).
 
 There is deliberately no "window size" / "max height" knob: those were footguns in 3.x. The window
 is the client's negotiated dimension, the cap is derived from the world.
+
+Invalid values never crash the server: each one falls back to its default with a logged warning, and
+unknown keys are reported too - a typo like `freeze-mss` will not silently do nothing forever.
 
 ## Commands and debugging
 
@@ -321,9 +328,15 @@ Bedrock-side, per player (development diagnostics are real, not simulated):
   recording is a single boolean check — production stays silent.
 - `/skywindow doctor` — the four preflight facts: extension enabled, world-manager wrapper installed
   (the anti-rubber-band fix), pipeline handler attached to your session, dimension bounds read +
-  whether windowing is engaged and why, plus malformed-chunk passthrough counter. Run this after
-  any Geyser update.
-- `/skywindow stats` — per-session counters (in/out translated, replays, switches, frozen drops).
+  whether windowing is engaged and why, the malformed-chunk passthrough counter, the last freeze
+  duration and current switch backoff, any packet types quarantined after a deterministic transform
+  failure, and the exact Geyser build this audit was run against. Run this after any Geyser update.
+- `/skywindow stats [reset]` — per-session counters (since login, or since the last reset): packets
+  in/out translated, chunks windowed/replayed, switches, actions held + queue overflows, drops while
+  frozen, chunk anomalies, and the last/total freeze duration in microseconds.
+- `/skywindow window <realY>` — force the *next* switch to home the window at a given real Y (QA tool;
+  it goes through the normal switch machinery on the session event loop - freeze, replay, backoff and
+  the derived cap all apply exactly as during automatic switches).
 
 If a Bedrock player reports rubber-banding at altitude, in order: `/skywindow doctor` (world manager +
 attached), `/skywindow watch on` while reproducing, `/skywindow recent` output. All numbers on screen come from
@@ -353,6 +366,14 @@ tool can fully prove — so here is exactly what *was* verified and where the re
   compiles against was checked against the authoritative upstream sources (Lombok `@Data`/`@With`
   shapes included), and every `org.geysermc.*` import is resolved mechanically against the clones.
   Compilation itself happens in CI against the pinned Geyser build.
+- **Property-style Java tests (CI):** `TransformPropertyTest` runs randomized coordinates through the
+  transform tables asserting the shift is exactly +O outbound / −O inbound with every other field
+  preserved (relative deltas, cursors, faces, sequences) — the same properties `oracle.py` mirrors in
+  Python, now also against the real 1.21 packet objects; `SectionCodecFuzzTest` throws 500 random
+  payloads plus truncated-structured ones at the chunk slicer and asserts it never throws, always
+  tiles its output exactly, and preserves parsed sections byte-identical; `HeldQueueTest` checks the
+  freeze queue under a two-producer/two-consumer 100k-entry race for losslessness and order;
+  `SkyWindowConfigTest` pins clamping, warning collection, and the sample-file/defaults round-trip.
 - **What still requires a live server (documented, not claimed):** an actual Bedrock client's
   behavior during the 400 ms freeze, end-to-end piston/redstone/fluid interaction at
   client Y≈460, reconnect/respawn transitions against a specific server build. Run the checklist in
@@ -401,9 +422,11 @@ tool can fully prove — so here is exactly what *was* verified and where the re
   for SkyWindow specifically.
 - **Signed chat commands** (`enforce-secure-profile`) can't be rewritten (signatures). SkyWindow sends
   them untouched; if an OP needs windowed absolute coords there, use console.
-- **`/skywindow window <force>` was intentionally removed** during this rewrite: forcing an offset
-  asynchronously was a 3.x bug source. For debugging, climb — the automatic switch *is* the tested
-  path.
+- **`/skywindow window <realY>` is deliberately the only forcing tool**: it re-homes the next switch
+  through the *normal* switch machinery (event loop, backoff, freeze, chunk replay) rather than
+  assigning an offset behind the pipeline's back — the 3.x habit of setting offsets asynchronously
+  was a bug source and stays gone. It cannot bypass the derived cap either: the target is clamped
+  exactly like every automatic switch.
 
 ## Performance
 
@@ -426,7 +449,7 @@ tool can fully prove — so here is exactly what *was* verified and where the re
 
 ## Version compatibility
 
-- Built and CI-tested (Maven `verify`: compile + 51 JUnit tests, GitHub Actions) against
+- Built and CI-tested (Maven `verify`: compile + full JUnit suite incl. fuzz/property tests, GitHub Actions) against
   **Geyser `2.11.2-SNAPSHOT`** via the published `api` + `core` artifacts; their compile-scope
   transitives provide exactly the mcprotocollib / cloudburst / netty classes the runtime has —
   that precise combination is what CI verifies (see `.github/workflows/build.yml`).
