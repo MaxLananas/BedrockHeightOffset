@@ -1,5 +1,9 @@
 # Packet matrix
 
+Audit stamp: last re-derived against Geyser `2.11.2-SNAPSHOT` / mcprotocollib `1.28.1` (2026-09-08).
+`SkyWindowCore.TESTED_AGAINST` carries the same string and is printed by `/skywindow doctor`, so a
+running server can always be checked against the audit it was compiled with.
+
 Every Java-protocol packet type that crosses the SkyWindow choke point (`SkyWindowHandler`, positioned
 after mcprotocollib's `codec`), with its per-direction policy. **A** = absolute Y shifted by ±O,
 **S** = section index shifted (A applied inside re-slicing), **R** = relative quantity — *must never
@@ -14,7 +18,7 @@ position consumers (see docs/ARCHITECTURE.md "Seam upgrades").
 
 | Packet | What is shifted | Notes |
 |---|---|---|
-| `LevelChunkWithLight` | S: payload section array (out[w]=in[w+Δ]); block-entity `y` −O with pruning outside the real-section array | Heightmaps & light data: **pass through** — Geyser master consumes neither (verified). |
+| `LevelChunkWithLight` | S: payload section array (out[w]=in[w+Δ]); block-entity `y` −O with pruning outside the real-section array | Heightmaps & light data: **pass through** — Geyser master consumes neither (verified @ 2.11.2); client-side lighting needs no Y knowledge beyond what Geyser derives from the translated blocks. |
 | `SectionBlocksUpdate` | `chunkY` section index −Δs; each `BlockChangeEntry` absolute pos −O | collib stores entries as global positions, both are shifted consistently. |
 | `BlockUpdate` | `BlockChangeEntry` pos −O | |
 | `AddEntity` | `y` (double) −O | `movement` is R; `data` is verified to carry no packed coords in current protocol (FallingBlockData stores the block state id only). |
@@ -46,7 +50,7 @@ position consumers (see docs/ARCHITECTURE.md "Seam upgrades").
 | `PickItemFromBlock` | pos +O | |
 | `SignUpdate` | pos +O | |
 | `SetCommandBlock` | pos +O | OP-tool edit at altitude. |
-| `SetCommandMinecart` | — | entity-targeted, position already fixed at spawn. |
+| `SetCommandMinecart` | — | carries no position at all on the wire — fields are exactly `(entityId, command, doesTrackOutput)` (verified 2026-09-08); the minecart's block position lives server-side. |
 | `SetStructureBlock` | pos +O | `offset`/`size` are R. |
 | `SetJigsawBlock` | pos +O | |
 | `ChatCommandSigned` | command string: first position triple's Y +O — **only** for allowlisted commands **and** when `signatures` is empty | Signed commands are never modified (would invalidate the signature). |

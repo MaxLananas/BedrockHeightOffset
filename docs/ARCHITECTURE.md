@@ -63,7 +63,53 @@ all receive and produce one single, self-consistent coordinate frame: the client
   event-loop enqueue for other threads, and any packet translated with a *stale* frame still maps to
   the same real coordinate the sender currently uses (`realY = clientY + O`), which is the exact
   property that keeps a switch race benign instead of catastrophic.
-- Commands (`/skywindow …`) read volatiles + a synchronized snapshot of the (opt-in) watch ring.
+- Commands (`/skywindow …`) read volatiles + a synchronized snapshot of the (opt-in) watch ring;
+  a command that mutates (`/skywindow window <realY>`) is bounced to the session's event loop via
+  the pipeline handler, never executed on the command thread.
+- A single sweeper on `GeyserImpl.getInstance().getScheduler()` (60 s period) is the only other
+  thread touching state: it reclaims per-session state for closed sessions when Geyser's disconnect
+  event did not fire (proxy hiccups, half-open connections), resetting the chunk cache - the one
+  place outside the event loop that touches a `SkyWindowSession`, and only for sessions no longer
+  attached (it removes them from the registry rather than mutating a live one).
+- The held-packet queue (`HeldQueue`) is the one structure crossing threads *while live*: `write()`
+  can run on the tick loop, the drain runs on the event loop. It is a lock-free bounded FIFO
+  (`ConcurrentLinkedQueue` + advisory size cap); on abandoned replays every pending netty promise
+  is completed successfully rather than failed, so Geyser write futures can never hang on a dropped
+  queue.
+
+## The switch and freeze protocol
+
+A window switch is a single event-loop task (`performSwitch`), in this order:
+
+1. `frozen = true`, remember `frozenFrameOffset = previous offset`, install `offset = target`.
+   From this microsecond, inbound translation uses the new offset and outbound position packets
+   are held.
+2. Backoff bookkeeping: switches arriving within 4x the cooldown double `switchBackoff` (cap 8),
+   the effective cooldown being `switch-cooldown-ms * max(1, backoff)`; a quiet period resets it to
+   1. This makes oscillation near a margin pathological-input-bounded rather than CPU-bounded.
+3. `held.clearAndComplete()` is *not* called here - held packets survive the whole freeze;
+   the queued chunk replays follow: every cached chunk in range is re-derived from pristine
+   originals at the new offset and sent first, so the snap lands on already-correct terrain.
+4. The client is snapped: a synthetic `MovePlayerPos`-equivalent teleport with the player's real
+   position projected into the new window (the `lastPlayerTeleport` snapshot path).
+5. `freezeMs` later, on the same event loop, `unfreeze` runs:
+   `frozen = false` → destroy-ghost reverts (block updates that were dropped while frozen are
+   re-sent once so the client resyncs authoritatively) → flush the held queue: each held packet is
+   replayed only when its frame hypothesis holds (a held dig/place whose position translates
+   identically under `frozenFrameOffset`, the current offset, or is out of interaction reach - then
+   it is dropped deliberately and counted); movement packets are replayed with the offset they were
+   captured under, preserving fall/elytra continuity.
+   Both steps are skipped wholesale if `worldGeneration` changed during the freeze (respawn/dimension
+   switch mid-switch): the ghosts and held writes refer to a world that no longer exists.
+6. Scheduling the unfreeze *fails* (loop shutting down) → unfreeze is executed inline before
+   returning; the freeze cannot outlive its own switch.
+
+Invariants: the freeze is only ever entered by the task that flips `offset`; nothing else writes
+`offset`; `frozen` has exactly one writer at a time per session, so a packet read by `write()` can
+observe (frozen, offset) pairs that are all states this protocol itself passed through - the
+benign-race property from the Threading section. Timings are kept in nanoseconds (last freeze and
+running totals) and surfaced by `stats`/`doctor` in microseconds - a freeze that drifts far past
+`freeze-ms` is a bug visible in one command.
 
 ## The chunk cache
 

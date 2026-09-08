@@ -8,7 +8,7 @@ if reality differs, capture `/skywindow watch on` + `/skywindow recent` output a
 1. Paper/Spigot 1.21.x with **extended overworld height enabled** (BTE-style: `min-y: -64`,
    `height: 2016` or a test value ≥ 1100 so windows actually engage).
 2. Geyser-Spigot (pinned version this repo CI builds against), Floodgate optional.
-3. SkyWindow extension jar in `plugins/Geyser-Spigot/extensions/ (the SkyWindow jar sits directly in extensions/)` — nothing else.
+3. SkyWindow extension jar in `plugins/Geyser-Spigot/extensions/` (or `extensions/` for standalone) — nothing else.
 4. One Bedrock client (current release), one Java client for control comparison.
 
 ## Preflight
@@ -42,6 +42,10 @@ if reality differs, capture `/skywindow watch on` + `/skywindow recent` output a
 | 13 | Two Bedrock players, different heights (400 vs 1500) | Each sees own window; they see each other at coherent relative positions; both can `/tp` to each other (relative/`~`) |
 | 14 | `/skywindow stats` after all the above | `malformed chunks = 0`; drops only during freeze windows |
 | 15 | Restart server mid-climb, rejoin at altitude | Clean recovery, no ghosts (cache rebuilds at identity, then one switch) |
+| 16 | `/skywindow stats reset`, then `/skywindow window <realY near ceiling>` | counters re-baseline (viewed deltas start at ~0); a forced switch lands through the normal protocol: terrain replay, snap, then movement resumes with **no** leftover offset in `info` (offset shown matches the forced frame); `doctor` shows the freeze µs and backoff |
+| 17 | Elytra dive *through* a switch point with `freeze-hold-movement=true` | fall/velocity continues after the snap (held movement replayed in-frame); with the key set `false`, movement during the freeze is dropped instead - visible as a momentary stall. Either way: no rubber-band afterwards |
+| 18 | Spam `/skywindow window` back and forth at the same edge | switches throttle: `doctor` shows backoff climbing (2,4,8) and switch interval widening; server tick unaffected; toggling stops cleanly when you stop |
+| 19 | `announce-switches=true`: climb until a natural switch | exactly one chat line per switch, no spam during backed-off bursts |
 
 ## Negative / stress
 
@@ -50,6 +54,10 @@ if reality differs, capture `/skywindow watch on` + `/skywindow recent` output a
 - [ ] Huge view distance (32) with tiny chunk cache (`chunk-cache-max-chunks: 64`) → switches work
       but may leave holes around you until the next natural chunk send — self-heals, no desync.
 - [ ] Turn `enabled: false` → byte-identical behavior to no extension at all.
+- [ ] Set `freeze-ms: 50` (aggressive short freeze) and do scenario 2+3: held-action path still
+      must not leave ghost blocks (`stats`: `actionsHeld` moves, `heldOverflow` ideally 0, drops
+      only on genuine overflow with authoritative re-send); a piston at the world *floor* below a
+      windowed player may still briefly ghost in view - documented cosmetic, not a failure.
 
 ## Sign-off
 
