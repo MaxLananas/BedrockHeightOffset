@@ -281,7 +281,7 @@ rather than corrupting.
 1. You need **Geyser** (Spigot/Paper via `Geyser-Spigot`, or Standalone, with any
    bridge — Floodgate optional) that supports **extended build height** (Geyser ≥ the 1.21-era
    "overworld height" work; this repo is built and CI-verified against Geyser
-   `2.11.0-SNAPSHOT`, see [Version compatibility](#version-compatibility)).
+   `2.11.2-SNAPSHOT`, see [Version compatibility](#version-compatibility)).
 2. Build: `mvn package` (needs JDK 21; downloads `geyser-spigot` + JUnit; no other plugins).
    Prebuilt jars are attached to the Actions runs of this repository.
 3. Put `skywindow-1.0.0.jar` into the **extensions** folder:
@@ -426,9 +426,10 @@ tool can fully prove — so here is exactly what *was* verified and where the re
 
 ## Version compatibility
 
-- Built and CI-tested against **Geyser `2.11.0-SNAPSHOT`** (the fat jar bundles the
-  mcprotocollib/cloudburst/netty this compiles against — that exact combination is what CI
-  verifies; see `.github/workflows/build.yml`).
+- Built and CI-tested (Maven `verify`: compile + 51 JUnit tests, GitHub Actions) against
+  **Geyser `2.11.2-SNAPSHOT`** via the published `api` + `core` artifacts; their compile-scope
+  transitives provide exactly the mcprotocollib / cloudburst / netty classes the runtime has —
+  that precise combination is what CI verifies (see `.github/workflows/build.yml`).
 - Runtime requirement is "the Geyser your server runs", because the extension resolves core classes
   parent-first from it; a Geyser update can move the two seam points (pipeline handler names, world
   manager field) — `/skywindow doctor` tells you immediately, and the failure mode of each seam is

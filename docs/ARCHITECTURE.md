@@ -2,7 +2,7 @@
 
 Deep-dive companion to the README's "How SkyWindow works" section. Written against the exact upstream
 sources pinned during the rewrite (Geyser master @ 9b65a39 + mcprotocollib master @ f0e959a, which
-is the shading inside Geyser-Spigot 2.11.0-SNAPSHOT); the numbers below refer to that code.
+is the shading inside Geyser-Spigot 2.11.2-SNAPSHOT); the numbers below refer to that code.
 
 ## The coordinate chain, end to end
 
