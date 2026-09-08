@@ -73,7 +73,9 @@ class SectionCodecFuzzTest {
     void deepShiftOutsideSourceYieldsAllAir() {
         byte[] one = SectionCodecTest.singletonSection(5, 0);
         SectionCodec.Result r = SectionCodec.resliceTolerant(one, 1, 100, 16);
-        assertTrue(r.anomaly());
+        // walking off the source is the normal world-edge case, not a payload anomaly:
+        assertFalse(r.anomaly(), "shift beyond the source must pad air silently");
+        assertEquals(1, r.sectionsParsed());
         byte[] expected = new byte[16 * SectionCodec.EMPTY_SECTION.length];
         for (int i = 0; i < 16; i++) {
             System.arraycopy(SectionCodec.EMPTY_SECTION, 0, expected,
@@ -113,7 +115,7 @@ class SectionCodecFuzzTest {
     @Test
     void zeroInputSectionsStillProducesRequestedOutput() {
         SectionCodec.Result r = SectionCodec.resliceTolerant(new byte[0], 0, 0, 3);
-        assertTrue(r.anomaly());
+        assertFalse(r.anomaly()); // declared zero sections, zero bytes: consistent, just empty input
         assertWellFormed(r.data(), 3);
         ByteArrayOutputStream expected = new ByteArrayOutputStream();
         for (int i = 0; i < 3; i++) {

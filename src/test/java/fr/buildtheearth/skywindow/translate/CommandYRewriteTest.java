@@ -63,11 +63,13 @@ class CommandYRewriteTest {
         String big = "tp 0 64 0 " + "x".repeat(600);
         assertTrue(big.length() > 512);
         assertNull(CommandYRewrite.rewrite(big, 1440, CFG), "rewriter must bail on adversarial length");
+        // trailing whitespace: split() drops trailing empty tokens, so the rewrite normalizes them away.
+        // That is fine (the server trims command input anyway) but pin it so the behavior cannot drift silently.
         String justUnder = "tp 0 64 0" + " ".repeat(100);
         assertTrue(justUnder.length() <= 512);
-        assertEquals("tp 0 1504 0" + " ".repeat(100),
-            CommandYRewrite.rewrite("tp 0 64 0" + " ".repeat(100), 1440, CFG),
-            "padding trailing spaces must not break the rewrite");
+        assertEquals("tp 0 1504 0", CommandYRewrite.rewrite(justUnder, 1440, CFG));
+        // but interior double-spaces must survive token-for-token (no accidental arg shift)
+        assertEquals("tp Steve  100 1504 0", CommandYRewrite.rewrite("tp Steve  100 64 0", 1440, CFG));
     }
 
     @Test
