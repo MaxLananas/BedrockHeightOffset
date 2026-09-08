@@ -35,13 +35,25 @@ jobs:
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          JAR="$(ls target/skywindow-*.jar 2>/dev/null | grep -v original | head -n1)"
-          if [ -z "$JAR" ]; then echo "no built jar found" >&2; exit 1; fi
+          set -uo pipefail
+          JAR="$(find target -maxdepth 1 -name 'skywindow-*.jar' ! -name 'original-*' -print -quit)"
+          if [ -z "${JAR}" ]; then echo "no built jar found" >&2; exit 1; fi
+          echo "publishing: ${JAR} ($(du -h "${JAR}" | cut -f1))"
           # SHA256SUMS.txt lists the bare jar name (what users verify against), not the target/ path.
-          ( cd target && sha256sum "$(basename "$JAR")" > SHA256SUMS.txt )
-          gh release create "$TAG" --verify-tag \
-            --title "SkyWindow $TAG" \
-            --notes "Geyser extension: windowed height support for Bedrock players (see README for guarantees and limits). Verify with: sha256sum -c SHA256SUMS.txt" \
-            "$JAR" target/SHA256SUMS.txt
+          ( cd target && sha256sum "$(basename "${JAR}")" > SHA256SUMS.txt ) || exit 1
+          # Idempotent republish: if the release already exists (rerun of a failed-after-create run),
+          # clobber its assets instead of erroring on "release already exists".
+          if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists - refreshing assets"
+            gh release upload "${TAG}" --clobber --repo "${{ github.repository }}" \
+              "${JAR}" target/SHA256SUMS.txt || exit 1
+          else
+            gh release create "${TAG}" --verify-tag \
+              --title "SkyWindow ${TAG}" \
+              --notes "Geyser extension: windowed height support for Bedrock players (see README for guarantees and limits). Verify with: sha256sum -c SHA256SUMS.txt" \
+              "${JAR}" target/SHA256SUMS.txt || exit 1
+          fi
+          gh release view "${TAG}" --repo "${{ github.repository }}" \
+            --json assets --jq '.assets[].name'
