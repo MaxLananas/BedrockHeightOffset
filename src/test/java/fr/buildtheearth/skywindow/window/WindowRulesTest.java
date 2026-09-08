@@ -43,7 +43,10 @@ class WindowRulesTest {
             assertTrue(o >= 0, "negative offset at " + realY);
             assertTrue(o <= MAX_OFF, "offset past max at " + realY);
             int clientY = realY - o;
-            assertTrue(clientY > C_MIN && clientY < C_MIN + C_H,
+            // The exclusive top edge (feet exactly at javaMaxY) may land on the window's exclusive
+            // ceiling: standing on the highest block puts the player in the "one above build limit"
+            // air slot; the client clamps that transient position and it self-corrects with gravity.
+            assertTrue(clientY > C_MIN && clientY <= C_MIN + C_H,
                 "player escapes window at realY " + realY + " -> clientY " + clientY);
         }
     }

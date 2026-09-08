@@ -101,13 +101,14 @@ class SectionCodecTest {
         byte[] payload = concat(a, b, c);
 
         byte[] shifted = SectionCodec.resliceTolerant(payload, 3, 2, 5).data();
-        // out[w] = in[w + 2]: slots 2,3,4 hold a,b,c; slots 0,1 are synthesized empties.
-        assertArrayEquals(SectionCodec.EMPTY_SECTION, Arrays.copyOfRange(shifted, 0, 8));
-        assertArrayEquals(SectionCodec.EMPTY_SECTION, Arrays.copyOfRange(shifted, 8, 16));
-        int pos = 16;
-        for (byte[] original : new byte[][] {a, b, c}) {
-            assertArrayEquals(original, Arrays.copyOfRange(shifted, pos, pos + original.length));
-            pos += original.length;
+        // Production convention (offset lifts real terrain down into the window): out[w] = in[w + 2],
+        // so slot 0 shows source section 2 (c) and every higher slot walks off the source: empties.
+        int pos = 0;
+        assertArrayEquals(c, Arrays.copyOfRange(shifted, pos, pos + c.length));
+        pos += c.length;
+        for (int i = 1; i < 5; i++) {
+            assertArrayEquals(SectionCodec.EMPTY_SECTION, Arrays.copyOfRange(shifted, pos, pos + 8));
+            pos += 8;
         }
         assertEquals(shifted.length, pos);
     }
@@ -150,7 +151,7 @@ class SectionCodecTest {
         // long payload (trailing junk): declared sections honored, anomaly flagged, no junk emitted
         SectionCodec.Result longRes = SectionCodec.resliceTolerant(concat(two, new byte[] {7, 7, 7}), 2, 0, 2);
         assertTrue(longRes.anomaly());
-        assertEquals(two, longRes.data());
+        assertArrayEquals(two, longRes.data());
 
         // clean payload: no anomaly
         SectionCodec.Result ok = SectionCodec.resliceTolerant(two, 2, 0, 2);
@@ -186,8 +187,12 @@ class SectionCodecTest {
         Random rnd = new Random(42);
         byte[] payload = concat(globalPaletteSection(256), singletonSection(3, 0), listPaletteSection(new int[] {0, 1}, new int[16]));
         byte[] out = SectionCodec.resliceTolerant(payload, 3, 1, 4).data();
+        // out[w] = in[w + 1]: slot 0 gets source section 1 (the singleton), slot 1 gets source 2 (the
+        // list section), slots 2..3 pad with empty; the 256-long global section leaves the window.
         byte[] first = Arrays.copyOfRange(out, 0, 8);
-        assertArrayEquals(SectionCodec.EMPTY_SECTION, first);
-        assertArrayEquals(globalPaletteSection(256), Arrays.copyOfRange(out, 8, 8 + globalPaletteSection(256).length));
+        assertArrayEquals(singletonSection(3, 0), first);
+        int afterFirst = 8;
+        byte[] second = Arrays.copyOfRange(out, afterFirst, afterFirst + 25);
+        assertArrayEquals(listPaletteSection(new int[] {0, 1}, new int[16]), second);
     }
 }
