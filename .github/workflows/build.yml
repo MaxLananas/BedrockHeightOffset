@@ -1,0 +1,41 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '20 6 * * 1'   # weekly drift probe: rebuilds against the newest 2.11.2-SNAPSHOT
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - name: Coordinate-math oracle (Python mirror of WindowRules/SectionCodec)
+        run: python3 dev/verify/oracle.py 5
+      - name: Compile and test against Geyser ${{ vars.GEYSER_VERSION || '2.11.2-SNAPSHOT' }}
+        run: |
+          set +e
+          mvn -B -ntp -Dmaven.repo.local=$RUNNER_TEMP/m2 \
+              -Dgeyser.version=${{ vars.GEYSER_VERSION || '2.11.2-SNAPSHOT' }} \
+              verify 2>&1 | tee mvn.log
+          ec=${PIPESTATUS[0]}
+          if [ $ec -ne 0 ]; then
+            # Surface real errors as annotations: the raw log stream can be unavailable.
+            grep -E "\[ERROR\]" mvn.log | head -50 | while IFS= read -r line; do
+              printf '::error::%s\n' "$(printf '%s' "$line" | tr -d '\r' | sed 's/%/%25/g; s/ / /g')"
+            done
+          fi
+          exit $ec
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyWindow-extension
+          path: target/skywindow-*.jar

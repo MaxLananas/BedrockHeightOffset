@@ -1,0 +1,59 @@
+name: release
+
+# Publishing is tag-driven: create a tag vX.Y.Z (annotated) on the commit to ship.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - name: Build
+        run: |
+          set +e
+          mvn -B -ntp -Dmaven.repo.local=$RUNNER_TEMP/m2 \
+              -Dgeyser.version=${{ vars.GEYSER_VERSION || '2.11.2-SNAPSHOT' }} \
+              verify 2>&1 | tee mvn.log
+          ec=${PIPESTATUS[0]}
+          if [ $ec -ne 0 ]; then
+            grep -E "\[ERROR\]" mvn.log | head -50 | while IFS= read -r line; do
+              printf '::error::%s\n' "$(printf '%s' "$line" | tr -d '\r' | sed 's/%/%25/g')"
+            done
+          fi
+          exit $ec
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -uo pipefail
+          JAR="$(find target -maxdepth 1 -name 'skywindow-*.jar' ! -name 'original-*' -print -quit)"
+          if [ -z "${JAR}" ]; then echo "no built jar found" >&2; exit 1; fi
+          echo "publishing: ${JAR} ($(du -h "${JAR}" | cut -f1))"
+          # SHA256SUMS.txt lists the bare jar name (what users verify against), not the target/ path.
+          ( cd target && sha256sum "$(basename "${JAR}")" > SHA256SUMS.txt ) || exit 1
+          # Idempotent republish: if the release already exists (rerun of a failed-after-create run),
+          # clobber its assets instead of erroring on "release already exists".
+          if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists - refreshing assets"
+            gh release upload "${TAG}" --clobber --repo "${{ github.repository }}" \
+              "${JAR}" target/SHA256SUMS.txt || exit 1
+          else
+            gh release create "${TAG}" --verify-tag \
+              --title "SkyWindow ${TAG}" \
+              --notes "Geyser extension: windowed height support for Bedrock players (see README for guarantees and limits). Verify with: sha256sum -c SHA256SUMS.txt" \
+              "${JAR}" target/SHA256SUMS.txt || exit 1
+          fi
+          gh release view "${TAG}" --repo "${{ github.repository }}" \
+            --json assets --jq '.assets[].name'

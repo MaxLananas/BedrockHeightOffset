@@ -1,0 +1,6 @@
+id: skywindow
+name: SkyWindow
+main: fr.buildtheearth.skywindow.SkyWindowExtension
+api: 2.11.0
+version: ${project.version}
+authors: [BuildTheEarth]
