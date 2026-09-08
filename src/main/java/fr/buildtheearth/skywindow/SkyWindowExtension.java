@@ -7,6 +7,7 @@ import org.geysermc.geyser.api.event.bedrock.SessionInitializeEvent;
 import org.geysermc.geyser.api.event.bedrock.SessionJoinEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserDefineCommandsEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserPostInitializeEvent;
+import org.geysermc.geyser.api.event.lifecycle.GeyserPostReloadEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserPreReloadEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserShutdownEvent;
 import org.geysermc.geyser.api.extension.Extension;
@@ -23,14 +24,13 @@ import org.geysermc.geyser.api.extension.Extension;
 public final class SkyWindowExtension implements Extension {
     private final SkyWindowCore core = new SkyWindowCore(this);
 
+    // Geyser 2.x drives extension lifecycle through events only (no onEnable/onDisable hooks):
+    // start on post-init so the platform pieces exist, re-apply on reload, stop on shutdown, and
+    // override disable() for the /geyser extensions disable path.
     @Override
-    public void onEnable() {
-        // Registration happens through the events below; nothing to do yet.
-    }
-
-    @Override
-    public void onDisable() {
+    public void disable() {
         core.stop();
+        Extension.super.disable();
     }
 
     public SkyWindowCore core() {
@@ -40,6 +40,12 @@ public final class SkyWindowExtension implements Extension {
     @Subscribe
     public void onPostInitialize(GeyserPostInitializeEvent event) {
         core.start();
+    }
+
+    @Subscribe
+    public void onPostReload(GeyserPostReloadEvent event) {
+        // Covers "enabled mid-session via /geyser extensions" and re-enable after a reload.
+        core.reload();
     }
 
     @Subscribe

@@ -253,8 +253,8 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             return;
         }
         if (packet instanceof ServerboundPlayerActionPacket action
-            && (action.getAction() == PlayerAction.START_DESTROY_BLOCK
-                || action.getAction() == PlayerAction.ABORT_DESTROY_BLOCK)
+            && (action.getAction() == PlayerAction.START_DIGGING
+                || action.getAction() == PlayerAction.CANCEL_DIGGING)
             && state.ghostRevertPositions.size() < 8) {
             // A destroy that never reaches the server would leave a locally-broken ghost; mark it for
             // an authoritative block re-send on unfreeze.
