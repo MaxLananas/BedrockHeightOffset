@@ -32,6 +32,9 @@ public final class SkyWindowCore {
     private volatile SkyWindowConfig config = SkyWindowConfig.loadDefault();
     private volatile boolean worldManagerShifted;
     private volatile boolean running;
+    /** Saved reflection handle for the bootstrap field we replaced, for clean restore. */
+    private volatile Field worldManagerField;
+    private volatile WorldManager originalWorldManager;
 
     public SkyWindowCore(SkyWindowExtension extension) {
         this.extension = extension;
@@ -156,7 +159,7 @@ public final class SkyWindowCore {
             return;
         }
         long delayMs = attempt < 10 ? 100L : 500L;
-        GeyserImpl.getInstance().getScheduledExecutorService().schedule(
+        GeyserImpl.getInstance().getScheduledThread().schedule(
             () -> installOrRetry(session, state, attempt), delayMs, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 

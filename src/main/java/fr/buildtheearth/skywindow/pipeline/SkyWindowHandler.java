@@ -384,7 +384,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         } else {
             snap = new ClientboundTeleportEntityPacket(
                 state.playerJavaId, targetPos, Vector3d.ZERO,
-                session.getPlayerEntity().yaw(), session.getPlayerEntity().pitch(), List.of(), true);
+                session.getPlayerEntity().getYaw(), session.getPlayerEntity().getPitch(), List.of(), true);
         }
         managerContext.fireChannelRead(snap);
         watch("IN", "SnapTeleport", "clientY=" + (int) clientY);
@@ -398,10 +398,10 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         if (state.ghostRevertPositions.isEmpty()) {
             return;
         }
-        for (Vector3i windowPos : List.copyOf(state.ghostRevertPositions)) {
+        for (Vector3i windowPos : new java.util.ArrayList<>(state.ghostRevertPositions)) {
             int blockId;
             try {
-                blockId = session.getWorldManager().getBlockAt(session, windowPos.getX(), windowPos.getY(), windowPos.getZ());
+                blockId = session.getGeyser().getWorldManager().getBlockAt(session, windowPos.getX(), windowPos.getY(), windowPos.getZ());
             } catch (Throwable t) {
                 continue;
             }

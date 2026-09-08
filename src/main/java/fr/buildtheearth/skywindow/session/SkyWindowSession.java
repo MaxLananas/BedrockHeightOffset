@@ -151,7 +151,12 @@ public final class SkyWindowSession {
     public final ChunkCache chunkCache;
     public ClientboundTeleportEntityPacket lastPlayerTeleport;
     public int playerJavaId = -1;
-    public final List<Vector3i> ghostRevertPositions = new ArrayList<>(8);
+        /**
+     * Dropped-destroy positions awaiting an authoritative re-send. Written from the writer thread
+     * (Geyser tick loop) and drained on the channel event loop, hence concurrent.
+     */
+    public final java.util.Set<Vector3i> ghostRevertPositions =
+        java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
     private final Deque<String> watchRing = new ArrayDeque<>(WATCH_RING_LIMIT);
 
     public final AtomicBoolean switchQueued = new AtomicBoolean();

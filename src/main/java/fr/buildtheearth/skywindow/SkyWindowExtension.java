@@ -71,6 +71,6 @@ public final class SkyWindowExtension implements Extension {
 
     @Subscribe
     public void onDefineCommands(GeyserDefineCommandsEvent event) {
-        event.commands().put("bho", SkyWindowCommand.build(this));
+        event.register(SkyWindowCommand.build(this));
     }
 }

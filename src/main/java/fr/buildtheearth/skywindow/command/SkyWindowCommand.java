@@ -20,7 +20,7 @@ public final class SkyWindowCommand {
     public static Command build(SkyWindowExtension extension) {
         return Command.<GeyserSession>builder(extension)
             .source(GeyserSession.class)
-            .name("bho")
+            .name("skywindow")
             .description("SkyWindow state and diagnostics")
             .aliases(List.of("sw", "bho"))
             .playerOnly(true)
