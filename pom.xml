@@ -21,7 +21,7 @@
           netty classes it provides are the exact runtime classes - they are compileOnly here and
           never bundled. Bump together with the target Geyser build and re-run /skywindow doctor.
         -->
-        <geyser.version>2.11.0-SNAPSHOT</geyser.version>
+        <geyser.version>2.11.2-SNAPSHOT</geyser.version>
         <junit.version>5.11.4</junit.version>
     </properties>
 
@@ -33,10 +33,20 @@
     </repositories>
 
     <dependencies>
-        <!-- Full Geyser-Spigot fat jar: core API + shaded mcprotocollib/cloudburst/netty. -->
+        <!--
+          Geyser publishes api + core to the OpenCollab repo; core brings mcprotocollib, cloudburst
+          and netty as compile-scope transitive dependencies (gradle api() -> maven compile), so the
+          exact runtime classes are on the compile path without bundling anything (all provided).
+        -->
         <dependency>
             <groupId>org.geysermc.geyser</groupId>
-            <artifactId>geyser-spigot</artifactId>
+            <artifactId>api</artifactId>
+            <version>${geyser.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.geysermc.geyser</groupId>
+            <artifactId>core</artifactId>
             <version>${geyser.version}</version>
             <scope>provided</scope>
         </dependency>

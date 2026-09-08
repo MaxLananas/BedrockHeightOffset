@@ -14,11 +14,11 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-      - name: Compile and test against Geyser ${{ vars.GEYSER_VERSION || '2.11.0-SNAPSHOT' }}
+      - name: Compile and test against Geyser ${{ vars.GEYSER_VERSION || '2.11.2-SNAPSHOT' }}
         run: |
           set +e
           mvn -B -ntp -Dmaven.repo.local=$RUNNER_TEMP/m2 \
-              -Dgeyser.version=${{ vars.GEYSER_VERSION || '2.11.0-SNAPSHOT' }} \
+              -Dgeyser.version=${{ vars.GEYSER_VERSION || '2.11.2-SNAPSHOT' }} \
               verify 2>&1 | tee mvn.log
           ec=${PIPESTATUS[0]}
           if [ $ec -ne 0 ]; then
