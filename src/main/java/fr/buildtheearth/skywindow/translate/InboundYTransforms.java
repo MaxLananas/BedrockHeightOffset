@@ -10,11 +10,18 @@ import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.type.Object
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PlayerSpawnInfo;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PositionElement;
 import org.geysermc.mcprotocollib.protocol.data.game.level.block.BlockChangeEntry;
+import org.geysermc.mcprotocollib.protocol.data.game.level.particle.Particle;
+import org.geysermc.mcprotocollib.protocol.data.game.level.particle.ParticleData;
+import org.geysermc.mcprotocollib.protocol.data.game.level.particle.TrailParticleData;
+import org.geysermc.mcprotocollib.protocol.data.game.level.particle.VibrationParticleData;
+import org.geysermc.mcprotocollib.protocol.data.game.level.particle.positionsource.BlockPositionSource;
 import org.geysermc.mcprotocollib.protocol.data.game.level.waypoint.TrackedWaypoint;
 import org.geysermc.mcprotocollib.protocol.data.game.level.waypoint.Vec3iWaypointData;
 import org.geysermc.mcprotocollib.protocol.data.game.level.waypoint.WaypointData;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundGameTestHighlightPosPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundLoginPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundRespawnPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.debug.ClientboundDebugBlockValuePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundAddEntityPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundDamageEventPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundEntityPositionSyncPacket;
@@ -127,11 +134,39 @@ public final class InboundYTransforms {
             // altitude must land on the windowed block or the editor opens on empty sky.
             return p.withPosition(shift(p.getPosition(), offset));
         }
+        if (packet instanceof ClientboundDebugBlockValuePacket p) {
+            // Debug subscription values (bees, brains, pathing...) observe one block in the world.
+            return p.withBlockPos(shift(p.getBlockPos(), offset));
+        }
+        if (packet instanceof ClientboundGameTestHighlightPosPacket p) {
+            // absolutePos is a world coordinate; relativePos is relative to the tester and stays.
+            return p.withAbsolutePos(shift(p.getAbsolutePos(), offset));
+        }
         if (packet instanceof ClientboundLevelEventPacket p) {
             return p.withPosition(shift(p.getPosition(), offset));
         }
         if (packet instanceof ClientboundLevelParticlesPacket p) {
-            return p.withY(p.getY() - offset);
+            ClientboundLevelParticlesPacket out = p.withY(p.getY() - offset);
+            // Particle payload data can carry ABSOLUTE targets: trail beams end at a world position,
+            // vibration/sculk pulses aim at a block (Geyser's JavaLevelParticlesTranslator consumes
+            // the vibration target verbatim). Shift those; entity-relative sources and
+            // color/item payloads are untouched.
+            ParticleData data = p.getParticle().getData();
+            ParticleData shiftedData = null;
+            if (data instanceof TrailParticleData trail) {
+                Vector3d target = trail.target();
+                shiftedData = new TrailParticleData(
+                    Vector3d.from(target.getX(), target.getY() - offset, target.getZ()),
+                    trail.color(), trail.duration());
+            } else if (data instanceof VibrationParticleData vibration
+                && vibration.getPositionSource() instanceof BlockPositionSource blockSource) {
+                shiftedData = new VibrationParticleData(
+                    new BlockPositionSource(shift(blockSource.getPosition(), offset)),
+                    vibration.getArrivalTicks());
+            }
+            return shiftedData == null
+                ? out
+                : out.withParticle(new Particle(p.getParticle().getType(), shiftedData));
         }
         if (packet instanceof ClientboundSoundPacket p) {
             return p.withY(p.getY() - offset);

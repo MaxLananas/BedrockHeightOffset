@@ -1,7 +1,7 @@
 # Packet matrix
 
-Audit stamp: last re-derived against Geyser `2.11.2-SNAPSHOT` / MCProtocolLib (GeyserMC master, protocol
-1.21.x line) on 2026-09-21, from the authoritative upstream sources (every packet class below was read,
+Audit stamp: last re-derived against Geyser `2.11.2-SNAPSHOT` (Minecraft **1.21.10**, MCProtocolLib
+`26.2`) on 2026-09-21, from the authoritative upstream sources (every packet class below was read,
 not guessed). `SkyWindowCore.TESTED_AGAINST` carries the same string and is printed by `/skywindow doctor`,
 so a running server can always be checked against the audit it was compiled with.
 
@@ -42,7 +42,9 @@ current position for any flagged axis). SkyWindow therefore shifts those packets
 | `BlockEntityData` | pos −O | NBT contents (sign lines etc.) are coordinate-free. |
 | `OpenSignEditor` | pos −O | Geyser forwards this straight to Bedrock `OpenSignPacket` — without the shift, the sign editor at altitude opens on empty sky. |
 | `LevelEvent` | pos (Vector3i) −O | |
-| `LevelParticles` | `y` −O | offsets & velocity are R. |
+| `LevelParticles` | `y` −O + **particle payload absolute targets** (`TrailParticleData.target`, `BlockPositionSource` inside `VibrationParticleData`) −O | offsets & velocity are R; `EntityPositionSource` and color/item payloads untouched (payload rebuilt only when it carries an absolute target). |
+| `DebugBlockValue` | `blockPos` −O | debug subscription values observe one block (bees/brains/pathing overlays). |
+| `GameTestHighlightPos` | `absolutePos` −O | `relativePos` is tester-relative (R) and stays. |
 | `Sound` (category-positions) | `y` −O | |
 | `PlayerLookAt` | `x/y/z` anchor `y` −O | camera "look at" targets (`JavaPlayerLookAtTranslator` computes the rotation delta from this point). |
 | `DamageEvent` | `sourcePosition` (nullable) `y` −O | damage tilt/knockback direction source (`JavaDamageEventTranslator`). Packet has no `@With` — exact rebuild, all other fields copied. |

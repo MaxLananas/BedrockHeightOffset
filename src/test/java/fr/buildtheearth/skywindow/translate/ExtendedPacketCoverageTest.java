@@ -3,6 +3,7 @@ package fr.buildtheearth.skywindow.translate;
 import net.kyori.adventure.key.Key;
 import org.cloudburstmc.math.vector.Vector3d;
 import org.cloudburstmc.math.vector.Vector3i;
+import org.geysermc.mcprotocollib.protocol.data.game.debug.DebugSubscriptions;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.RotationOrigin;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.EntityMetadata;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.GlobalPos;
@@ -11,16 +12,25 @@ import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.type.Object
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.GameMode;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PlayerSpawnInfo;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PositionElement;
+import org.geysermc.mcprotocollib.protocol.data.game.level.particle.Particle;
+import org.geysermc.mcprotocollib.protocol.data.game.level.particle.ParticleType;
+import org.geysermc.mcprotocollib.protocol.data.game.level.particle.TrailParticleData;
+import org.geysermc.mcprotocollib.protocol.data.game.level.particle.VibrationParticleData;
+import org.geysermc.mcprotocollib.protocol.data.game.level.particle.positionsource.BlockPositionSource;
+import org.geysermc.mcprotocollib.protocol.data.game.level.particle.positionsource.EntityPositionSource;
 import org.geysermc.mcprotocollib.protocol.data.game.level.waypoint.TrackedWaypoint;
 import org.geysermc.mcprotocollib.protocol.data.game.level.waypoint.Vec3iWaypointData;
 import org.geysermc.mcprotocollib.protocol.data.game.level.waypoint.WaypointOperation;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundGameTestHighlightPosPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundLoginPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundRespawnPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.debug.ClientboundDebugBlockValuePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundDamageEventPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundSetEntityDataPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundTeleportEntityPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerLookAtPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerPositionPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundLevelParticlesPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundOpenSignEditorPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundTrackedWaypointPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandPacket;
@@ -149,7 +159,7 @@ class ExtendedPacketCoverageTest {
         var loginOut = (ClientboundLoginPacket) InboundYTransforms.apply(login, offset);
         assertEquals(1952 - offset, loginOut.getCommonPlayerSpawnInfo().getLastDeathPos().getPosition().getY());
 
-        var respawn = new ClientboundRespawnPacket(info, true);
+        var respawn = new ClientboundRespawnPacket(info, true, false);
         var respawnOut = (ClientboundRespawnPacket) InboundYTransforms.apply(respawn, offset);
         assertEquals(1952 - offset, respawnOut.getCommonPlayerSpawnInfo().getLastDeathPos().getPosition().getY());
         assertEquals(Key.key("minecraft:overworld"),
@@ -228,6 +238,58 @@ class ExtendedPacketCoverageTest {
 
         assertEquals(Vector3i.ZERO,
             OutboundYTransforms.blockPosition(new ServerboundJigsawGeneratePacket(Vector3i.ZERO, 1, false)));
+    }
+
+    @Test
+    void particleAbsoluteTargetsShiftButRelativeSourcesDoNot() {
+        int offset = 1440;
+        var trail = new TrailParticleData(Vector3d.from(2, 1948.5, -3), 0x00FF00, 40);
+        var p1 = new ClientboundLevelParticlesPacket(
+            new Particle(ParticleType.TRAIL, trail), true, false,
+            1, 1947.0, 2, 0, 0, 0, 0, 0);
+        var out1 = (ClientboundLevelParticlesPacket) InboundYTransforms.apply(p1, offset);
+        assertEquals(1947.0 - offset, out1.getY(), 0.0);
+        TrailParticleData t = (TrailParticleData) out1.getParticle().getData();
+        assertEquals(1948.5 - offset, t.target().getY(), 0.0);
+        assertEquals(2, t.target().getX(), 0.0);
+        assertEquals(0x00FF00, t.color());
+        assertEquals(40, t.duration());
+
+        var vib = new VibrationParticleData(new BlockPositionSource(Vector3i.from(3, 1930, 4)), 12);
+        var p2 = new ClientboundLevelParticlesPacket(
+            new Particle(ParticleType.VIBRATION, vib), false, false,
+            0, 10.0, 0, 0, 0, 0, 0, 0);
+        var out2 = (ClientboundLevelParticlesPacket) InboundYTransforms.apply(p2, offset);
+        VibrationParticleData v = (VibrationParticleData) out2.getParticle().getData();
+        assertEquals(1930 - offset, ((BlockPositionSource) v.getPositionSource()).getPosition().getY());
+        assertEquals(3, ((BlockPositionSource) v.getPositionSource()).getPosition().getX());
+        assertEquals(12, v.getArrivalTicks());
+
+        var entityVib = new VibrationParticleData(new EntityPositionSource(9, 0.25f), 12);
+        var p3 = new ClientboundLevelParticlesPacket(
+            new Particle(ParticleType.VIBRATION, entityVib), false, false,
+            0, 10.0, 0, 0, 0, 0, 0, 0);
+        var out3 = (ClientboundLevelParticlesPacket) InboundYTransforms.apply(p3, offset);
+        // entity-relative vibration source: payload forwarded by reference, only y shifted
+        assertSame(entityVib, out3.getParticle().getData());
+    }
+
+    @Test
+    void debugAndGameTestHighlightPositionsShift() {
+        int offset = 512;
+        var debug = new ClientboundDebugBlockValuePacket(
+            Vector3i.from(2, 1900, -2), DebugSubscriptions.BEES, null);
+        var debugOut = (ClientboundDebugBlockValuePacket) InboundYTransforms.apply(debug, offset);
+        assertEquals(1900 - offset, debugOut.getBlockPos().getY());
+        assertEquals(2, debugOut.getBlockPos().getX());
+        assertEquals(-2, debugOut.getBlockPos().getZ());
+        assertEquals(DebugSubscriptions.BEES, debugOut.getSubscriptionType());
+
+        var hl = new ClientboundGameTestHighlightPosPacket(
+            Vector3i.from(0, 1800, 0), Vector3i.from(1, 2, 3));
+        var hlOut = (ClientboundGameTestHighlightPosPacket) InboundYTransforms.apply(hl, offset);
+        assertEquals(1800 - offset, hlOut.getAbsolutePos().getY());
+        assertEquals(Vector3i.from(1, 2, 3), hlOut.getRelativePos());
     }
 
     @Test

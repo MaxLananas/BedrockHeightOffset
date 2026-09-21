@@ -26,7 +26,11 @@ every remaining "works most of the time" hole. Same architecture, same config, d
   (signed commands are never touched).
 - **Visibility packets at altitude**: `OpenSignEditor`, `PlayerLookAt` anchor, `DamageEvent`
   source position, `Login`/`Respawn` `lastDeathPos` (death screen / recovery compass),
-  `TrackedWaypoint` VEC3I coordinates (locator bar).
+  `TrackedWaypoint` VEC3I coordinates (locator bar), `DebugBlockValue` and
+  `GameTestHighlightPos` (absolute half only).
+- **Hidden absolute positions inside particle payloads**: `TrailParticleData` beam targets and
+  `BlockPositionSource` vibration aims (Geyser's particle translator consumes the latter
+  verbatim) are shifted; entity-relative sources and color/item payloads stay byte-identical.
 - **Hold queue widened** to *every* position-bearing serverbound packet during a switch freeze
   (sign edits, NBT queries, command-block saves… — not just dig/place), capacity 96.
 - **Seam strategy B (bootstrap proxy)**: when no `WorldManager`-typed field accepts the wrapper
@@ -46,6 +50,8 @@ every remaining "works most of the time" hole. Same architecture, same config, d
 - **Forced switch retry** no longer deadlocks behind its own latch (`switchQueued` is re-armed at
   retry entry).
 - `SectionCodec` rejects palette sizes outside `[0, 2^bits]` (fail-closed, mirroring vanilla).
+- Ghost-revert dig actions matched `PlayerAction.FINISH_DIGGING` (the real enum constant — the
+  audit draft's `STOP_DIGGING` never existed in MCProtocolLib).
 
 ### Changed
 

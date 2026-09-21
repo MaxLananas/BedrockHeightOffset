@@ -395,7 +395,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
     private void recordGhost(MinecraftPacket packet) {
         if (packet instanceof ServerboundPlayerActionPacket action
             && (action.getAction() == PlayerAction.START_DIGGING
-                || action.getAction() == PlayerAction.STOP_DIGGING
+                || action.getAction() == PlayerAction.FINISH_DIGGING
                 || action.getAction() == PlayerAction.CANCEL_DIGGING)) {
             addGhost(action.getPosition(), state.frozenFrameOffset);
         } else if (packet instanceof ServerboundUseItemOnPacket use) {

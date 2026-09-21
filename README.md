@@ -455,7 +455,8 @@ tool can fully prove — so here is exactly what *was* verified and where the re
 ## Version compatibility
 
 - Built and CI-tested (Maven `verify`: compile + full JUnit suite incl. fuzz/property tests, GitHub Actions) against
-  **Geyser `2.11.2-SNAPSHOT`** via the published `api` + `core` artifacts; their compile-scope
+  **Geyser `2.11.2-SNAPSHOT`** (**Minecraft: Java Edition 1.21.10**, MCProtocolLib 26.2) via the
+  published `api` + `core` artifacts; their compile-scope
   transitives provide exactly the mcprotocollib / cloudburst / netty classes the runtime has —
   that precise combination is what CI verifies (see `.github/workflows/build.yml`).
 - Runtime requirement is "the Geyser your server runs", because the extension resolves core classes
