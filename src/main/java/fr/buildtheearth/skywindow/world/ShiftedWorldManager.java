@@ -48,6 +48,16 @@ public final class ShiftedWorldManager extends WorldManager {
     }
 
     @Override
+    public java.util.concurrent.CompletableFuture<Integer> getBlockAtAsync(GeyserSession session, int x, int y, int z) {
+        // Delegate the async flavour too (Paper's async chunk access etc.) instead of forcing the
+        // base-class sync path through getBlockAt.
+        int offset = core.currentOffset(session);
+        return offset == 0
+            ? delegate.getBlockAtAsync(session, x, y, z)
+            : delegate.getBlockAtAsync(session, x, y + offset, z);
+    }
+
+    @Override
     public int[] getBlocksAt(GeyserSession session, BlockPositionIterator iter) {
         int offset = core.currentOffset(session);
         if (offset == 0) {

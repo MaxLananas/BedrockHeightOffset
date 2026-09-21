@@ -140,6 +140,30 @@ class SectionCodecTest {
     }
 
     @Test
+    void paletteSizeOutOfRangeThrows() {
+        // 16 entries is the maximum a 4-bit list palette may declare; 17 would silently skip-or-
+        // overrun the id scan and mis-slice everything behind it.
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(new byte[] {0, 0, 0, 0}, 0, 4);
+        out.write(4); // bits per entry: list palette
+        writeVarInt(out, 17); // one over 2^4
+        assertThrows(SectionCodec.FormatException.class,
+            () -> SectionCodec.sectionLength(out.toByteArray(), 0));
+
+        // A negative decoded count (high bit set) must not skip the id scan either.
+        ByteArrayOutputStream negative = new ByteArrayOutputStream();
+        negative.write(new byte[] {0, 0, 0, 0}, 0, 4);
+        negative.write(4);
+        writeVarInt(negative, 0xFFFFFFFF); // decodes to -1 as an int
+        assertThrows(SectionCodec.FormatException.class,
+            () -> SectionCodec.sectionLength(negative.toByteArray(), 0));
+
+        // Exactly 2^bits entries is legal (wasteful, but legal).
+        byte[] full = listPaletteSection(new int[16], new int[2]);
+        assertEquals(full.length, SectionCodec.sectionLength(full, 0));
+    }
+
+    @Test
     void tolerantResliceNeverThrowsAndAlwaysMatchesExpectedCount() {
         byte[] two = concat(singletonSection(1, 0), singletonSection(2, 0));
 

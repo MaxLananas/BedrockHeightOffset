@@ -128,6 +128,11 @@ public final class SectionCodec {
             long count = readVarintScan(data, pos);
             pos = (int) (count >>> 32);
             int paletteEntries = (int) count;
+            // A list palette can hold at most one entry per representable index, and a negative
+            // decoded count would silently skip the id scan and mis-slice everything after it.
+            if (paletteEntries < 0 || paletteEntries > (1 << bitsPerEntry)) {
+                throw new FormatException("palette size out of range");
+            }
             for (int i = 0; i < paletteEntries; i++) {
                 pos = skipVarint(data, pos);
             }

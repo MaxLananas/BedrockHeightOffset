@@ -83,6 +83,10 @@ def skip_palette(data, p, max_list_bits):
         return p
     if bits <= max_list_bits:
         count, p = read_varint(data, p)
+        # Mirror of SectionCodec.skipPalette: a list palette may hold at most one entry per
+        # representable index; negative/oversized counts would silently mis-slice the payload.
+        if count < 0 or count > (1 << bits):
+            raise FormatError("palette size out of range")
         for _ in range(count):
             _, p = read_varint(data, p)
     long_count, p = read_varint(data, p)

@@ -2,7 +2,8 @@
 
 Deep-dive companion to the README's "How SkyWindow works" section. Written against the exact upstream
 sources pinned during the rewrite (Geyser master @ 9b65a39 + mcprotocollib master @ f0e959a, which
-is the shading inside Geyser-Spigot 2.11.2-SNAPSHOT); the numbers below refer to that code.
+is the shading inside Geyser-Spigot 2.11.2-SNAPSHOT), and re-audited against Geyser + MCProtocolLib
+master sources on 2026-09-21 (details in docs/PACKET-MATRIX.md); the numbers below refer to that code.
 
 ## The coordinate chain, end to end
 
@@ -90,15 +91,19 @@ A window switch is a single event-loop task (`performSwitch`), in this order:
 3. `held.clearAndComplete()` is *not* called here - held packets survive the whole freeze;
    the queued chunk replays follow: every cached chunk in range is re-derived from pristine
    originals at the new offset and sent first, so the snap lands on already-correct terrain.
-4. The client is snapped: a synthetic `MovePlayerPos`-equivalent teleport with the player's real
-   position projected into the new window (the `lastPlayerTeleport` snapshot path).
+4. The client is snapped: a synthetic `ClientboundPlayerPositionPacket` with the player's real
+   position projected into the new window (the `lastPlayerTeleport` snapshot path — its `id` is the
+   server's teleport id, so Geyser's downstream ack line up exactly as for a real teleport).
 5. `freezeMs` later, on the same event loop, `unfreeze` runs:
    `frozen = false` → destroy-ghost reverts (block updates that were dropped while frozen are
-   re-sent once so the client resyncs authoritatively) → flush the held queue: each held packet is
-   replayed only when its frame hypothesis holds (a held dig/place whose position translates
-   identically under `frozenFrameOffset`, the current offset, or is out of interaction reach - then
-   it is dropped deliberately and counted); movement packets are replayed with the offset they were
-   captured under, preserving fall/elytra continuity.
+   re-sent once so the client resyncs authoritatively — stored in *real* space at drop time and
+   re-projected into whatever frame the client holds at unfreeze) → flush the held queue: each held
+   packet is replayed only when its frame hypothesis holds (a held position-bearing packet whose
+   position translates identically under `frozenFrameOffset`, the current offset, or is out of
+   interaction reach — then it is dropped deliberately and counted); movement packets are replayed
+   with the offset they were captured under, preserving fall/elytra continuity. The hold covers
+   *every* position-bearing serverbound packet (movement, dig/place, vehicle, tool edits,
+   NBT queries…), capacity 96.
    Both steps are skipped wholesale if `worldGeneration` changed during the freeze (respawn/dimension
    switch mid-switch): the ghosts and held writes refer to a world that no longer exists.
 6. Scheduling the unfreeze *fails* (loop shutting down) → unfreeze is executed inline before
@@ -133,12 +138,13 @@ LRU under the configured chunk and byte caps. Replay derives windowed copies on 
   expected section count (so Geyser's decoder can never run past the payload into the light
   data), and the `anomaly-normalized chunks` counter surfaces it in `/skywindow doctor`.
 - Block interactions sent during a switch freeze → queued and replayed on unfreeze in the sender's
-  original frame (never dropped, never double-applied; queue overflow drops explicitly and reverts
-  any possible ghost block authoritatively).
+  original frame (never dropped, never double-applied; queue overflow (cap 96) drops explicitly and
+  reverts any possible ghost block authoritatively).
 - Pipeline not attachable after ~1 minute of retries → the player is reported and stays passive
   (vanilla behavior). The extension logs why.
-- World-manager field not found (platform reorg) → collision fix disabled globally with an explicit
-  log line; everything else keeps working. Rubber-band protection is then platform-degraded —
+- World-manager seam not resolvable (platform reorg, neither a settable `WorldManager` field nor a
+  `GeyserBootstrap` slot to proxy) → collision fix disabled globally with an explicit log line;
+  everything else keeps working. Rubber-band protection is then platform-degraded —
   documented, visible, and not silently half-on.
 
 ## Seams (the only version-sensitive parts) and upgrade policy
@@ -146,7 +152,7 @@ LRU under the configured chunk and byte caps. Replay derives windowed copies on 
 | Seam | Used for | Breaks as | Detected by |
 |---|---|---|---|
 | `NetworkConstants.CODEC_NAME` / `MANAGER_NAME` pipeline insertion on the downstream channel | the choke point | attach retry → passive | `/skywindow doctor` (not attached), startup log |
-| `GeyserBootstrap` field assignment of type `WorldManager` | collision/container read correction | log + degraded mode | `/skywindow doctor` |
+| `GeyserImpl` world-manager seam (A: `WorldManager`-typed field swap, B: `GeyserBootstrap` proxy over `bootstrap`) | collision/container read correction | log + degraded mode | `/skywindow doctor` |
 | mcprotocollib packet class shapes (`@With` builders, field names) | all transforms | per-packet: fail-safe passthrough (one log line) | `doctor` counters (`malformed` stays 0; watch rings) |
 | cloudburst `Vector3*`/math types | positions | none expected (shared API of the pinned build) | CI compile |
 

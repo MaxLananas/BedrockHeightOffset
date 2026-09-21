@@ -160,8 +160,11 @@ real coordinate in the frame the sender is currently using.
 
 ### High-altitude interaction
 
-Place/break/raycast/pick-block/sign/command-block/vehicle packets all carry absolute block or
-entity positions; each is shifted at the same single choke point and nothing else. Because Geyser
+Place/break/raycast/pick-block/sign/command-block/structure-block/jigsaw/NBT-query/test-block/vehicle
+packets all carry absolute block or entity positions; each is shifted at the same single choke point
+and nothing else (the full reviewed list is [docs/PACKET-MATRIX.md](docs/PACKET-MATRIX.md) —
+including absolute block-position entity metadata such as bed positions and ender-crystal beam
+targets, `Login`/`Respawn` death coordinates and locator-bar waypoints). Because Geyser
 builds those Java packets from its own cache of the (already windowed) client state, and the
 server then applies the (re-shifted) coordinates to the real world, a placement at client Y=505
 during offset 1440 lands at real Y=1945 — exact integer arithmetic, verified round-trip in tests.
@@ -245,15 +248,16 @@ construction, not by convention.
    │  client   │                                   │  sees [-512..512]   │
    └───────────┘                                   └─────────────────────┘
 
-   Side channel: GeyserImpl bootstrap's WorldManager is wrapped once, at startup:
-   session-aware reads (collision manager, inventory holder, pots) add the caller
-   session's offset before touching the real world — the rubber-band fix.
+   Side channel: GeyserImpl's world manager seam is wrapped once, at startup
+   (field swap, else a GeyserBootstrap proxy): session-aware reads (collision
+   manager, inventory holder, pots) add the caller's offset before touching the
+   real world — the rubber-band fix.
 ```
 
 | Class (package `fr.buildtheearth.skywindow`) | Responsibility |
 |---|---|
 | `SkyWindowExtension` | Lifecycle glue: subscribes to Geyser events, owns `SkyWindowCore`, registers `/skywindow` (aliases `/sw`, `/bho`). |
-| `SkyWindowCore` | Config load, per-session state registry, pipeline install (with bounded retry), `WorldManager` wrap (single guarded reflection point). |
+| `SkyWindowCore` | Config load, per-session state registry, pipeline install (with bounded retry), `WorldManager` wrap (dual-strategy: field swap, else bootstrap proxy). |
 | `SkyWindowConfig` | Flat properties config (`config.properties` in the extension folder). |
 | `pipeline/SkyWindowHandler` | The choke point: inbound/outbound translation, position monitor, chunk cache, atomic switch, freeze, watch ring. |
 | `window/WindowRules` | Pure offset/switch math. Also the single mirror target of the Python oracle. |
@@ -286,7 +290,7 @@ rather than corrupting.
    sha256 file on GitHub Releases), or build it yourself: `mvn package` (needs JDK 21; resolves the Geyser
    `api` + `core` artifacts and JUnit from the OpenGeyser repository, and enforces that no
    Bukkit/Spigot/Paper/ProtocolLib dependency ever sneaks in).
-3. Put `skywindow-1.0.0.jar` (the artifact of the `v1.0.0` release; verify against the published
+3. Put `skywindow-1.1.0.jar` (the artifact of the `v1.1.0` release; verify against the published
    `SHA256SUMS.txt`) into the **extensions** folder:
    `plugins/Geyser-Spigot/extensions/` (Spigot/Paper) or `extensions/` next to the standalone jar.
 4. Start the server. A default `config.properties` is written next to the extension. **No Java-side
@@ -480,4 +484,5 @@ tool can fully prove — so here is exactly what *was* verified and where the re
 
 *Docs deep-dives: [ARCHITECTURE.md](docs/ARCHITECTURE.md) (design decisions, packet chain, threads)
 · [PACKET-MATRIX.md](docs/PACKET-MATRIX.md) (per-packet policy table)
-· [VERIFICATION.md](docs/VERIFICATION.md) (staging checklist to run with real clients).*
+· [VERIFICATION.md](docs/VERIFICATION.md) (staging checklist to run with real clients)
+· [CHANGELOG.md](CHANGELOG.md) (release notes).*

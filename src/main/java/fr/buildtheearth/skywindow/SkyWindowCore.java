@@ -4,7 +4,7 @@ import fr.buildtheearth.skywindow.pipeline.SkyWindowHandler;
 import fr.buildtheearth.skywindow.session.SkyWindowSession;
 import fr.buildtheearth.skywindow.world.ShiftedWorldManager;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelHandlerContext;
+import org.geysermc.geyser.GeyserBootstrap;
 import org.geysermc.geyser.GeyserImpl;
 import org.geysermc.geyser.api.connection.GeyserConnection;
 import org.geysermc.geyser.level.BedrockDimension;
@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class SkyWindowCore {
     /** What the packet-shape assumptions in docs/ have been verified against; shown by /skywindow doctor. */
-    public static final String TESTED_AGAINST = "Geyser 2.11.2-SNAPSHOT @ 2026-09-08; docs/PACKET-MATRIX.md carries the audit details";
+    public static final String TESTED_AGAINST = "Geyser 2.11.2-SNAPSHOT / MCProtocolLib master-1.28.x @ 2026-09-21; docs/PACKET-MATRIX.md carries the audit details";
 
     private final SkyWindowExtension extension;
     private final Map<GeyserSession, SkyWindowSession> states = new ConcurrentHashMap<>();
@@ -38,9 +38,11 @@ public final class SkyWindowCore {
         deriveCommandConfig(SkyWindowConfig.loadDefault());
     private volatile boolean worldManagerShifted;
     private volatile boolean running;
-    /** Saved reflection handle for the bootstrap field we replaced, for clean restore. */
+    /** Saved reflection handles for whatever we replaced, for clean restore. */
     private volatile Field worldManagerField;
     private volatile WorldManager originalWorldManager;
+    private volatile Field bootstrapField;
+    private volatile Object originalBootstrap;
 
     public SkyWindowCore(SkyWindowExtension extension) {
         this.extension = extension;
@@ -297,9 +299,8 @@ public final class SkyWindowCore {
         if (pipeline.get(NetworkConstants.CODEC_NAME) == null || pipeline.get(NetworkConstants.MANAGER_NAME) == null) {
             return false;
         }
-        ChannelHandlerContext managerContext = pipeline.context(NetworkConstants.MANAGER_NAME);
         pipeline.addAfter(NetworkConstants.CODEC_NAME, SkyWindowHandler.HANDLER_NAME,
-            new SkyWindowHandler(session, state, this, GeyserImpl.getInstance().getLogger(), managerContext));
+            new SkyWindowHandler(session, state, this, GeyserImpl.getInstance().getLogger()));
         return true;
     }
 
@@ -334,39 +335,56 @@ public final class SkyWindowCore {
     // ------------------------------------------------------------------ world manager swap
 
     /**
-     * Geyser keeps its {@link WorldManager} on the platform bootstrap, usually in a private field, so
-     * this is the extension's single guarded reflection point. If the field cannot be found or written,
-     * SkyWindow still removes block/placement desync (packet layer) but keeps the documented limitation that
-     * session-aware direct world reads (collision corrections) may still disagree on platforms where
-     * the manager is consulted; the log says so explicitly.
+     * Geyser consults the platform {@link WorldManager} for every direct, session-aware world read
+     * (collision corrections, container re-checks, vehicle physics, decorated pots). The wrapper adds
+     * the calling session's offset so those reads resolve in the same window frame the client lives
+     * in. Two install strategies, in order of blast radius:
+     *
+     * <ol>
+     *   <li><b>Field swap</b> - replace the bootstrap's own {@code WorldManager} field when its
+     *       declared type accepts a {@link ShiftedWorldManager} (e.g. the mod platform declares
+     *       {@code WorldManager}).</li>
+     *   <li><b>Bootstrap proxy</b> - Geyser's Spigot bootstrap declares its field as
+     *       {@code GeyserSpigotWorldManager} (a platform subclass), so a plain {@code Field.set} of
+     *       our decorator is rejected by the JVM's store check. Instead we replace
+     *       {@code GeyserImpl}'s {@code GeyserBootstrap} reference with a dynamic proxy whose
+     *       {@code getWorldManager()} returns the decorator and which delegates every other method.
+     *       {@code GeyserImpl.getWorldManager()} and {@code getBootstrap().getWorldManager()} then
+     *       both see the decorator on every platform. (No Geyser core or platform code type-tests or
+     *       casts the bootstrap object - audited against Geyser 2.11.x sources.)</li>
+     * </ol>
+     *
+     * If both fail (a future Geyser that reorganizes the bootstrap), SkyWindow still removes
+     * block/placement desync at the packet layer but session-aware direct world reads (collision
+     * corrections) may still disagree - the log and {@code /skywindow doctor} say so explicitly.
      */
     private void installShiftedWorldManager() {
+        if (worldManagerShifted) {
+            return; // already wrapped by a previous enable cycle (enabled -> reload -> still enabled)
+        }
         try {
             Object bootstrap = GeyserImpl.getInstance().getBootstrap();
-            if (bootstrap == null) {
+            if (!(bootstrap instanceof GeyserBootstrap geyserBootstrap)) {
                 throw new IllegalStateException("no bootstrap");
             }
-            Field field = findWorldManagerField(bootstrap.getClass());
-            field.setAccessible(true);
-            Object current = field.get(bootstrap);
+            WorldManager current = geyserBootstrap.getWorldManager();
             if (current instanceof ShiftedWorldManager) {
-                // Already wrapped by a previous enable cycle (e.g. enabled -> reload -> still enabled).
-                // Treat as success: the wrap is live, re-wrapping would double-shift.
-                if (worldManagerField == null) {
-                    worldManagerField = field;
-                    originalWorldManager = null; // restore not owned by us; leave wrapped
-                }
+                // Already wrapped (e.g. by a previous load that did not unwrap): treat as success.
                 worldManagerShifted = true;
                 return;
             }
-            if (!(current instanceof WorldManager manager)) {
-                throw new IllegalStateException("unexpected world manager: " + current);
+            ShiftedWorldManager wrapper = new ShiftedWorldManager(current, this);
+            String strategy = tryFieldSwap(bootstrap, wrapper)
+                ? "bootstrap field"
+                : tryBootstrapProxy(geyserBootstrap, wrapper)
+                    ? "geyser bootstrap proxy"
+                    : null;
+            if (strategy == null) {
+                throw new IllegalStateException("no installable seam on " + bootstrap.getClass().getName());
             }
-            field.set(bootstrap, new ShiftedWorldManager(manager, this));
-            this.worldManagerField = field;
-            this.originalWorldManager = manager;
             worldManagerShifted = true;
-            extension.logger().info("[SkyWindow] world manager wrapped: session-aware direct reads now follow the window");
+            extension.logger().info("[SkyWindow] world manager wrapped (" + strategy
+                + "): session-aware direct reads now follow the window");
         } catch (Throwable t) {
             worldManagerShifted = false;
             extension.logger().warning("[SkyWindow] could not wrap the platform world manager (" + t
@@ -375,39 +393,121 @@ public final class SkyWindowCore {
         }
     }
 
-    /**
-     * Match by type, not name: platforms declare this with platform-specific names and subclasses
-     * (Geyser-Spigot uses {@code private GeyserSpigotWorldManager geyserWorldManager}). Final fields
-     * are skipped: we do not fight immutability that Geyser relies on elsewhere.
-     */
+    /** Strategy 1: the bootstrap keeps its manager in a field whose declared type accepts our decorator. */
+    private boolean tryFieldSwap(Object bootstrap, ShiftedWorldManager wrapper) {
+        try {
+            Field field = findWorldManagerField(bootstrap.getClass());
+            if (field == null) {
+                return false;
+            }
+            field.setAccessible(true);
+            Object current = field.get(bootstrap);
+            if (!(current instanceof WorldManager) || current instanceof ShiftedWorldManager) {
+                return false;
+            }
+            field.set(bootstrap, wrapper);
+            this.worldManagerField = field;
+            this.originalWorldManager = (WorldManager) current;
+            return true;
+        } catch (Throwable ignored) {
+            // Platform field type refused the store (or reflection is blocked): fall through.
+            return false;
+        }
+    }
+
+    /** Strategy 2: wrap the {@link GeyserBootstrap} reference GeyserImpl dispatches through. */
+    private boolean tryBootstrapProxy(GeyserBootstrap real, ShiftedWorldManager wrapper) {
+        try {
+            GeyserImpl geyser = GeyserImpl.getInstance();
+            Field field = findBootstrapField(geyser.getClass());
+            if (field == null) {
+                return false;
+            }
+            field.setAccessible(true);
+            if (field.get(geyser) != real) {
+                return false;
+            }
+            Object proxy = java.lang.reflect.Proxy.newProxyInstance(
+                GeyserBootstrap.class.getClassLoader(),
+                new Class<?>[] {GeyserBootstrap.class},
+                (p, method, args) -> {
+                    if ("getWorldManager".equals(method.getName()) && method.getParameterCount() == 0) {
+                        return wrapper;
+                    }
+                    try {
+                        return method.invoke(real, args);
+                    } catch (java.lang.reflect.InvocationTargetException e) {
+                        throw e.getCause() != null ? e.getCause() : e;
+                    }
+                });
+            field.set(geyser, proxy);
+            this.bootstrapField = field;
+            this.originalBootstrap = real;
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     private void unwrapWorldManager() {
         Field field = worldManagerField;
         WorldManager original = originalWorldManager;
-        if (field == null || original == null) {
-            return;
-        }
-        try {
-            Object bootstrap = GeyserImpl.getInstance().getBootstrap();
-            if (bootstrap != null && field.get(bootstrap) instanceof ShiftedWorldManager) {
-                field.set(bootstrap, original);
+        if (field != null && original != null) {
+            try {
+                Object bootstrap = GeyserImpl.getInstance().getBootstrap();
+                if (bootstrap != null && field.get(bootstrap) instanceof ShiftedWorldManager) {
+                    field.set(bootstrap, original);
+                }
+            } catch (Throwable ignored) {
+                // shutdown path; a leftover wrapper disappears with the process anyway
             }
-        } catch (Throwable ignored) {
-            // shutdown path; a leftover wrapper disappears with the process anyway
+            worldManagerField = null;
+            originalWorldManager = null;
+        }
+        Field bootstrapField = this.bootstrapField;
+        Object bootstrapOriginal = this.originalBootstrap;
+        if (bootstrapField != null && bootstrapOriginal != null) {
+            try {
+                bootstrapField.set(GeyserImpl.getInstance(), bootstrapOriginal);
+            } catch (Throwable ignored) {
+                // shutdown path
+            }
+            this.bootstrapField = null;
+            this.originalBootstrap = null;
         }
         worldManagerShifted = false;
     }
 
+    /**
+     * Match by assignability to {@link ShiftedWorldManager}: only fields whose declared type would
+     * actually accept the decorator (the JVM store-checks {@code Field.set}). Final and static fields
+     * are skipped - we do not fight immutability Geyser relies on elsewhere.
+     */
     private static Field findWorldManagerField(Class<?> type) {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             for (Field f : c.getDeclaredFields()) {
                 if (WorldManager.class.isAssignableFrom(f.getType())
+                    && f.getType().isAssignableFrom(ShiftedWorldManager.class)
                     && !java.lang.reflect.Modifier.isStatic(f.getModifiers())
                     && !java.lang.reflect.Modifier.isFinal(f.getModifiers())) {
                     return f;
                 }
             }
         }
-        throw new IllegalStateException("no settable WorldManager field found on " + type.getName());
+        return null;
+    }
+
+    /** The {@link GeyserBootstrap} reference on GeyserImpl (non-static; final is acceptable here). */
+    private static Field findBootstrapField(Class<?> type) {
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Field f : c.getDeclaredFields()) {
+                if (GeyserBootstrap.class.isAssignableFrom(f.getType())
+                    && !java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                    return f;
+                }
+            }
+        }
+        return null;
     }
 
     private static GeyserSession cast(GeyserConnection connection) {

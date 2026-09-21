@@ -151,9 +151,11 @@ public final class SkyWindowSession {
     public final ChunkCache chunkCache;
     public ClientboundTeleportEntityPacket lastPlayerTeleport;
     public int playerJavaId = -1;
-        /**
-     * Dropped-destroy positions awaiting an authoritative re-send. Written from the writer thread
-     * (Geyser tick loop) and drained on the channel event loop, hence concurrent.
+    /**
+     * Dropped dig/place targets awaiting an authoritative block re-send on unfreeze, stored in REAL
+     * space (resolved from the sender's frame when dropped) so the re-send projects correctly into
+     * whatever frame the client holds at unfreeze time. Written from the writer thread (Geyser tick
+     * loop) and drained on the channel event loop, hence concurrent.
      */
     public final java.util.Set<Vector3i> ghostRevertPositions =
         java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());

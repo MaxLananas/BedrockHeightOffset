@@ -7,7 +7,6 @@ import fr.buildtheearth.skywindow.translate.InboundYTransforms;
 import fr.buildtheearth.skywindow.translate.OutboundYTransforms;
 import fr.buildtheearth.skywindow.translate.WindowedChunks;
 import fr.buildtheearth.skywindow.window.WindowRules;
-import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
@@ -17,17 +16,20 @@ import org.cloudburstmc.math.vector.Vector3i;
 import org.geysermc.geyser.GeyserLogger;
 import org.geysermc.geyser.session.GeyserSession;
 import org.geysermc.mcprotocollib.protocol.codec.MinecraftPacket;
+import org.geysermc.mcprotocollib.protocol.data.game.entity.object.Direction;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PlayerAction;
 import org.geysermc.mcprotocollib.protocol.data.game.level.block.BlockChangeEntry;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundLoginPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundRespawnPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundEntityPositionSyncPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundTeleportEntityPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerPositionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundBlockUpdatePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundForgetLevelChunkPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundLevelChunkWithLightPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundMovePlayerPosPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundMovePlayerPosRotPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundMoveVehiclePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundPlayerActionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundUseItemOnPacket;
 
@@ -44,6 +46,13 @@ import java.util.concurrent.TimeUnit;
  * protocol and the Java server all keep speaking their normal coordinate systems, and the offset never
  * passes through more than one layer.
  *
+ * <p>Injection of synthetic packets (chunk replays, switch snaps, ghost reverts) is done with
+ * {@code ctx.fireChannelRead(...)} from this handler's own context: that lands in the next inbound
+ * handler (mcprotocollib's {@code manager}, i.e. the {@code NetworkSession} that dispatches to
+ * Geyser's packet listeners) exactly as if this handler had forwarded it - already in window space,
+ * without re-entering its own transform. (Firing from the manager's own context would skip the
+ * manager entirely and end at the netty tail, where the message is silently discarded.)</p>
+ *
  * <p>Threading: inbound and the whole window switch run on the channel event loop, so anything not
  * explicitly volatile here is confined to it. Outbound {@code write} may also run on the Geyser tick
  * loop (and the Bedrock-side netty thread); there, state is only read (volatiles), the held queues are
@@ -52,19 +61,22 @@ import java.util.concurrent.TimeUnit;
  * <p>The freeze protocol and its frame-resolution rules for held packets are documented in
  * docs/ARCHITECTURE.md ("Window switching") - the short version: packets a client sent while it still
  * lived in the previous frame must be translated with the PREVIOUS offset; the switch therefore
- * remembers {@code frozenFrameOffset} and held block actions are only replayed when their position is
- * physically plausible (within reach of the player's real position) under that frame, then the new
- * one, and are dropped with an authoritative revert if neither fits.</p>
+ * remembers {@code frozenFrameOffset} and held block-position packets are only replayed when their
+ * position is physically plausible (within reach of the player's real position) under that frame,
+ * then the new one, and are dropped with an authoritative revert if neither fits.</p>
  */
 public final class SkyWindowHandler extends ChannelDuplexHandler {
     public static final String HANDLER_NAME = "skywindow";
 
-    /** Combined cap for the held queue: 400 ms of freeze cannot legitimately produce more. */
-    private static final int HELD_QUEUE_LIMIT = 48;
     /**
-     * Max |held block position - player real position| for a dig/place to be replayed. Bedrock reach
-     * is ~7 blocks; the discriminator only needs to be below half of the smallest legal offset
-     * distance (16). Both frame hypotheses cannot satisfy this simultaneously when dOffset >= 16,
+     * Cap for the held queue: 400 ms of freeze plus a hostile 100 ms freeze setting at high
+     * packet rates must fit (movement ~30/s, dig/place bursts, the odd sign/command edit).
+     */
+    private static final int HELD_QUEUE_LIMIT = 96;
+    /**
+     * Max |held block position - player real position| for a block-position packet to be replayed.
+     * Bedrock reach is ~7 blocks; the discriminator only needs to be below half of the smallest legal
+     * offset distance (16). Both frame hypotheses cannot satisfy this simultaneously when dOffset >= 16,
      * which is an invariant of the windowing design (section-aligned offsets).
      */
     private static final int HELD_ACTION_REACH_BLOCKS = 7;
@@ -73,7 +85,6 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
     private final SkyWindowSession state;
     private final SkyWindowCore core;
     private final GeyserLogger logger;
-    private final ChannelHandlerContext managerContext;
     private final HeldQueue held;
     // Event-loop confined:
     private ChannelHandlerContext ctx;
@@ -81,12 +92,11 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
     private boolean loggedTransformError;
 
     public SkyWindowHandler(GeyserSession session, SkyWindowSession state, SkyWindowCore core,
-                            GeyserLogger logger, ChannelHandlerContext managerContext) {
+                            GeyserLogger logger) {
         this.session = java.util.Objects.requireNonNull(session);
         this.state = java.util.Objects.requireNonNull(state);
         this.core = java.util.Objects.requireNonNull(core);
         this.logger = java.util.Objects.requireNonNull(logger);
-        this.managerContext = java.util.Objects.requireNonNull(managerContext);
         // Built here, not in the field initializer: the overflow lambda must capture a fully
         // assigned `state` (the compiler is right to reject a forward reference in an initializer).
         this.held = new HeldQueue(HELD_QUEUE_LIMIT, state.heldOverflow::increment);
@@ -145,16 +155,41 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             // runs AFTER us: mark dirty so the first chunk packet (guaranteed to follow) re-derives.
             state.windowDirty = true;
             refreshWindowAndMaybeEvaluate();
-            ctx.fireChannelRead(login);
+            // Falls through to the generic transform: PlayerSpawnInfo.lastDeathPos is absolute Y.
+            int offset = state.offset;
+            if (offset == 0 || !appliesToPlayer()) {
+                ctx.fireChannelRead(login);
+                return;
+            }
+            Object translated = InboundYTransforms.apply(login, offset);
+            if (translated != login) {
+                state.inTranslated.increment();
+                if (state.watch) {
+                    watch("IN", "Login", "y-" + offset + " (death pos)");
+                }
+            }
+            ctx.fireChannelRead(translated);
             return;
         }
-        if (packet instanceof ClientboundRespawnPacket) {
+        if (packet instanceof ClientboundRespawnPacket respawn) {
             // A dimension change replaces the world wholesale; drop cached chunks and re-derive.
             state.resetChunkCache();
             state.worldGeneration++;
             state.windowDirty = true;
             refreshWindowAndMaybeEvaluate();
-            ctx.fireChannelRead(packet);
+            int offset = state.offset;
+            if (offset == 0 || !appliesToPlayer()) {
+                ctx.fireChannelRead(respawn);
+                return;
+            }
+                Object translated = InboundYTransforms.apply(respawn, offset);
+            if (translated != respawn) {
+                state.inTranslated.increment();
+                if (state.watch) {
+                    watch("IN", "Respawn", "y-" + offset + " (death pos)");
+                }
+            }
+            ctx.fireChannelRead(translated);
             return;
         }
         if (packet instanceof ClientboundLevelChunkWithLightPacket chunk) {
@@ -197,13 +232,21 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         if (packet instanceof ClientboundTeleportEntityPacket teleport) {
             if (teleport.getId() == state.playerJavaId && appliesToPlayer()) {
                 state.lastPlayerTeleport = teleport;
-                evaluateSwitch(teleport.getPosition().getY());
+                evaluateSwitch(realYOf(teleport.getPosition().getY(),
+                    InboundYTransforms.isRelativeY(teleport.getRelatives())));
             }
-            // fall through to the generic transform below
+            // fall through to the generic transform below (which itself honors relative Y)
+        }
+        if (packet instanceof ClientboundPlayerPositionPacket position && appliesToPlayer()) {
+            // The player-teleport family (its "id" is a teleport id, not an entity id - every such
+            // packet is about our own player): monitor it (this is how /tp, warps and portals move
+            // the player) and let the generic transform shift its absolute Y.
+            evaluateSwitch(realYOf(position.getPosition().getY(),
+                InboundYTransforms.isRelativeY(position.getRelatives())));
         }
         if (packet instanceof ClientboundEntityPositionSyncPacket sync) {
             if (sync.getId() == state.playerJavaId && appliesToPlayer()) {
-                evaluateSwitch(sync.getPosition().getY());
+                evaluateSwitch(realYOf(sync.getPosition().getY(), false));
             }
         }
 
@@ -220,6 +263,18 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             }
         }
         ctx.fireChannelRead(translated);
+    }
+
+    /** Real Y of a client-side/server-side position field, relative flags respected. */
+    private double realYOf(double packetY, boolean relativeY) {
+        if (!relativeY) {
+            return packetY + state.offset;
+        }
+        double currentReal = state.lastSeenRealY;
+        if (currentReal == 0 && session.getPlayerEntity() != null) {
+            currentReal = session.getPlayerEntity().position().getY() + state.offset;
+        }
+        return currentReal + packetY;
     }
 
     // ---------------------------------------------------------------- outbound
@@ -297,44 +352,74 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
     /**
      * While a switch is in flight, the client has not necessarily received the snap teleport yet:
      * packets arriving now are mostly still written in the PREVIOUS frame, so translating them with
-     * the new offset would lie about the player's real position. Movement is therefore never dropped
-     * anymore when {@code freeze-hold-movement} is on: it is held raw and replayed on unfreeze with
-     * the frame it was sent in (a slightly stale absolute position is harmless; a wrong-height one is
-     * not). Block interactions are held too, but only replayed when the frame hypothesis is physically
-     * plausible (see {@link #flushHeld}); anything unresolvable or overflowing the queue falls back to
-     * the old drop path with an authoritative ghost revert for destroys.
+     * the new offset would lie about the player's real position. Every position-bearing packet is
+     * therefore held and replayed on unfreeze in a frame-aware way ({@link #flushHeld}) instead of
+     * being written mis-translated: movement in the frame it was sent in (fall/elytra continuity),
+     * block-position packets only when the frame hypothesis is physically plausible (reach check),
+     * commands in the sender's frame. Anything unresolvable or overflowing the queue falls back to
+     * the drop path with an authoritative ghost revert for dig/place.
      */
     private void handleFrozenWrite(ChannelHandlerContext ctx, MinecraftPacket packet, ChannelPromise promise, int offset) {
         if (!OutboundYTransforms.isPositionBearing(packet)) {
+            // Truly Y-free (rotations, swings, container clicks, accept-teleport, ...): forward raw.
             ctx.write(packet, promise);
             return;
         }
-        boolean blockAction = packet instanceof ServerboundPlayerActionPacket
-            || packet instanceof ServerboundUseItemOnPacket;
-        boolean movementHeld = !blockAction && core.config().freezeHoldMovement;
+        boolean blockPositioned = OutboundYTransforms.isBlockAction(packet)
+            || OutboundYTransforms.blockPosition(packet) != null;
+        boolean movementLike = !blockPositioned && !OutboundYTransforms.isCommandPacket(packet);
+        boolean hold = (blockPositioned && core.config().freezeHoldActions)
+            || (movementLike && core.config().freezeHoldMovement)
+            || OutboundYTransforms.isCommandPacket(packet);
         state.lastSeenRealY = clientFrameRealY(packet, state.frozenFrameOffset, state.lastSeenRealY);
-        if ((blockAction || movementHeld)
-            && held.offer(new HeldQueue.Entry(packet, promise, blockAction))) {
+        if (hold && held.offer(new HeldQueue.Entry(packet, promise, blockPositioned))) {
             state.actionsHeld.increment();
             if (state.watch) {
                 watch("OUT", shortName(packet), "held across switch");
             }
             return;
         }
-        if (blockAction && core.config().freezeHoldActions) {
-            // Queue overflow of a held block action: same fallback as a dropped one.
-        }
-        if (packet instanceof ServerboundPlayerActionPacket action
-            && (action.getAction() == PlayerAction.START_DIGGING
-                || action.getAction() == PlayerAction.CANCEL_DIGGING)
-            && state.ghostRevertPositions.size() < SkyWindowSession.GHOST_REVERT_LIMIT) {
-            // A destroy that never reaches the server would leave a locally-broken ghost; mark it for
-            // an authoritative block re-send on unfreeze (position stays in the client's current frame,
-            // which is what Geyser's block re-send path expects).
-            state.ghostRevertPositions.add(action.getPosition());
+        if (blockPositioned) {
+            recordGhost(packet);
         }
         state.droppedWhileFrozen.increment();
         promise.trySuccess();
+    }
+
+    /**
+     * Remembers the authoritative re-send targets for a dropped dig/place: the dig position, or for a
+     * placement both the clicked block and the position a block would appear at. Stored in REAL space
+     * (the frame the packet was sent in, resolved now) so the unfreeze re-send survives any offset
+     * bookkeeping in between. Capped; best-effort cosmetics only.
+     */
+    private void recordGhost(MinecraftPacket packet) {
+        if (packet instanceof ServerboundPlayerActionPacket action
+            && (action.getAction() == PlayerAction.START_DIGGING
+                || action.getAction() == PlayerAction.STOP_DIGGING
+                || action.getAction() == PlayerAction.CANCEL_DIGGING)) {
+            addGhost(action.getPosition(), state.frozenFrameOffset);
+        } else if (packet instanceof ServerboundUseItemOnPacket use) {
+            addGhost(use.getPosition(), state.frozenFrameOffset);
+            addGhost(faceTarget(use.getPosition(), use.getFace()), state.frozenFrameOffset);
+        }
+    }
+
+    private void addGhost(Vector3i windowPos, int frameOffset) {
+        if (state.ghostRevertPositions.size() >= SkyWindowSession.GHOST_REVERT_LIMIT) {
+            return;
+        }
+        state.ghostRevertPositions.add(Vector3i.from(windowPos.getX(), windowPos.getY() + frameOffset, windowPos.getZ()));
+    }
+
+    private static Vector3i faceTarget(Vector3i pos, Direction face) {
+        return switch (face) {
+            case DOWN -> Vector3i.from(pos.getX(), pos.getY() - 1, pos.getZ());
+            case UP -> Vector3i.from(pos.getX(), pos.getY() + 1, pos.getZ());
+            case NORTH -> Vector3i.from(pos.getX(), pos.getY(), pos.getZ() - 1);
+            case SOUTH -> Vector3i.from(pos.getX(), pos.getY(), pos.getZ() + 1);
+            case WEST -> Vector3i.from(pos.getX() - 1, pos.getY(), pos.getZ());
+            case EAST -> Vector3i.from(pos.getX() + 1, pos.getY(), pos.getZ());
+        };
     }
 
     /** The player's physical Y as implied by a packet the client sent in frame {@code frameOffset}; double-guarded. */
@@ -342,6 +427,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         return switch (packet) {
             case ServerboundMovePlayerPosPacket p -> p.getY() + frameOffset;
             case ServerboundMovePlayerPosRotPacket p -> p.getY() + frameOffset;
+            case ServerboundMoveVehiclePacket p -> p.getPosition().getY() + frameOffset;
             default -> fallback;
         };
     }
@@ -365,22 +451,23 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                         // interpretation whose block position is within physical reach of the player.
                         // (Identity translations - e.g. frozen frame offset 0 - are legitimate.)
                         Object oldFrame = OutboundYTransforms.apply(packet, frozenFrame, core.commandConfig());
-                        if (blockActionPlausible(oldFrame, playerRealY)) {
+                        if (plausible(oldFrame, playerRealY)) {
                             out = oldFrame; // sent before the snap took effect: pre-switch frame
                         } else {
                             Object newFrame = offsetNow == frozenFrame ? oldFrame
                                 : OutboundYTransforms.apply(packet, offsetNow, core.commandConfig());
-                            if (blockActionPlausible(newFrame, playerRealY)) {
+                            if (plausible(newFrame, playerRealY)) {
                                 out = newFrame; // sent after the snap: current frame
                             } else {
                                 state.droppedWhileFrozen.increment();
+                                recordGhost(packet);
                                 entry.promise().trySuccess();
                                 continue; // unresolvable frame: drop, never guess
                             }
                         }
                     } else {
-                        // Movement: replay with the frame it was sent in; staleness is bounded by the
-                        // freeze and self-corrected by the next packet.
+                        // Movement/vehicle/commands: replay with the frame they were sent in;
+                        // staleness is bounded by the freeze and self-corrected by the next packet.
                         out = OutboundYTransforms.apply(packet, frozenFrame, core.commandConfig());
                     }
                 }
@@ -393,12 +480,8 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
     }
 
     /** @return true when the translated packet's primary block position is within reach of the player. */
-    private static boolean blockActionPlausible(Object translatedPacket, double playerRealY) {
-        Vector3i pos = switch ((MinecraftPacket) translatedPacket) {
-            case ServerboundPlayerActionPacket p -> p.getPosition();
-            case ServerboundUseItemOnPacket p -> p.getPosition();
-            default -> null;
-        };
+    private static boolean plausible(Object translatedPacket, double playerRealY) {
+        Vector3i pos = OutboundYTransforms.blockPosition(translatedPacket);
         if (pos == null) {
             return false;
         }
@@ -495,7 +578,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                 } else {
                     state.chunkReplays.increment();
                 }
-                managerContext.fireChannelRead(windowed.packet());
+                inject(windowed.packet());
             }
             injectPlayerSnap(realY, target);
 
@@ -523,6 +606,11 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                     state.frozen = false;
                     revertDestroyedGhosts();
                     flushHeld();
+                    if (state.forcedRealY >= 0) {
+                        // /skywindow window arrived during the freeze: run it now through the normal
+                        // machinery rather than leaving the operator hanging.
+                        performSwitch();
+                    }
                 }, config.freezeMs, TimeUnit.MILLISECONDS);
             } catch (Throwable schedulingFailed) {
                 // Executor shutting down: unwind the freeze inline so the player is never stranded.
@@ -538,19 +626,55 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         }
     }
 
-    /** Operator-initiated exact-window move ({@code /skywindow window <realY>}); same machinery, given target. */
+    /**
+     * Operator-initiated exact-window move ({@code /skywindow window <realY>}): same machinery, given
+     * target. Unlike 3.x-era forcing this never assigns an offset behind the pipeline's back - it goes
+     * through {@link #performSwitch} (freeze, replay, snap, backoff, derived cap). A request arriving
+     * mid-freeze waits for the freeze to unwind; one arriving inside the backoff window is scheduled
+     * at its expiry, so spamming the command throttles like automatic switching.
+     */
     public void forceWindow(double realY) {
         ChannelHandlerContext self = ctx;
         if (self == null) {
             return;
         }
         state.forcedRealY = realY;
-        if (self.channel().eventLoop().inEventLoop()) {
-            state.frozen = false; // allow manual override to jump the debounce of its own making
-            performSwitch();
-        } else {
-            self.channel().eventLoop().execute(this::performSwitch);
+        try {
+            if (self.channel().eventLoop().inEventLoop()) {
+                performForcedSwitch();
+            } else {
+                self.channel().eventLoop().execute(this::performForcedSwitch);
+            }
+        } catch (Throwable ignored) {
+            // channel closing; the request simply does not land
         }
+    }
+
+    /** Event-loop confined forced-switch entry: applies the same anti-storm throttle as automatic switches. */
+    private void performForcedSwitch() {
+        state.switchQueued.set(false); // any retry we scheduled owns the latch only until here
+        if (state.forcedRealY < 0 || state.frozen) {
+            return; // consumed elsewhere, or the freeze's unwinding will re-invoke us
+        }
+        ChannelHandlerContext self = ctx;
+        if (self == null || !self.channel().isActive()) {
+            return;
+        }
+        SkyWindowConfig config = core.config();
+        long cooldown = config.switchCooldownMs * Math.max(1, state.switchBackoff);
+        long sinceLast = System.currentTimeMillis() - state.lastSwitchAtMs;
+        if (sinceLast < cooldown) {
+            if (state.switchQueued.compareAndSet(false, true)) {
+                try {
+                    self.channel().eventLoop().schedule(this::performForcedSwitch, cooldown - sinceLast,
+                        TimeUnit.MILLISECONDS);
+                } catch (Throwable t) {
+                    state.switchQueued.set(false);
+                }
+            }
+            return;
+        }
+        performSwitch();
     }
 
     private void announceSwitch(int from, int to) {
@@ -559,6 +683,18 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                 + (to - from > 0 ? "↑" : "↓") + " " + Math.abs(to - from) + " blocs (automatique)");
         } catch (Throwable ignored) {
             // cosmetics never affect the packet path
+        }
+    }
+
+    /**
+     * Injects an already-windowed packet downstream of this handler: it enters Geyser's packet
+     * dispatch (the {@code manager} handler) exactly as a forwarded server packet would, without
+     * re-entering this handler's transform.
+     */
+    private void inject(MinecraftPacket packet) {
+        ChannelHandlerContext self = ctx;
+        if (self != null) {
+            self.fireChannelRead(packet);
         }
     }
 
@@ -578,33 +714,34 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                 state.playerJavaId, targetPos, Vector3d.ZERO,
                 session.getPlayerEntity().getYaw(), session.getPlayerEntity().getPitch(), List.of(), true);
         }
-        managerContext.fireChannelRead(snap);
+        inject(snap);
         if (state.watch) {
             watch("IN", "SnapTeleport", "clientY=" + (int) clientY);
         }
     }
 
     /**
-     * Block destruction dropped while frozen never reached the server; push the authoritative block
-     * back into Geyser so the client does not keep a locally-broken ghost.
+     * Block destruction/placement dropped while frozen never reached the server; push the
+     * authoritative block back into Geyser so the client does not keep a locally-broken ghost.
+     * Stored positions are REAL space; they are re-projected into the client's current frame here.
      */
     private void revertDestroyedGhosts() {
         if (state.ghostRevertPositions.isEmpty()) {
             return;
         }
-        for (Vector3i windowPos : new java.util.ArrayList<>(state.ghostRevertPositions)) {
+        int offset = state.offset;
+        for (Vector3i realPos : new java.util.ArrayList<>(state.ghostRevertPositions)) {
+            Vector3i windowPos = Vector3i.from(realPos.getX(), realPos.getY() - offset, realPos.getZ());
             int blockId;
             try {
-                // Position stays in the client frame on purpose: the read goes through the wrapped
-                // world manager (which adds the active offset) while the re-send bypasses our own
-                // inbound transform, so the client gets the right block at the position it sees.
-                // If the wrap failed (doctor reports it), this reads the unshifted position - a
-                // cosmetic miss in an already-degraded configuration, never a corruption.
+                // The read goes through the (session-aware, shifted) world manager with the window
+                // position and comes back as the same real block; the re-send is injected past our
+                // own transform so the client gets the right block at the position it sees.
                 blockId = session.getGeyser().getWorldManager().getBlockAt(session, windowPos.getX(), windowPos.getY(), windowPos.getZ());
             } catch (Throwable t) {
                 continue;
             }
-            managerContext.fireChannelRead(new ClientboundBlockUpdatePacket(new BlockChangeEntry(windowPos, blockId)));
+            inject(new ClientboundBlockUpdatePacket(new BlockChangeEntry(windowPos, blockId)));
         }
         state.ghostRevertPositions.clear();
     }
