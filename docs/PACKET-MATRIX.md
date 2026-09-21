@@ -50,7 +50,7 @@ current position for any flagged axis). SkyWindow therefore shifts those packets
 | `DamageEvent` | `sourcePosition` (nullable) `y` −O | damage tilt/knockback direction source (`JavaDamageEventTranslator`). Packet has no `@With` — exact rebuild, all other fields copied. |
 | `Explode` | `center` −O | `playerKnockback` R; `blockParticles` verified coordinate-free (`particle + scaling + speed`). |
 | `SetDefaultSpawnPosition` | `globalPos.position` −O | respawn target / compass. |
-| `Login` | `commonPlayerSpawnInfo.lastDeathPos` −O (side-effect: capture `entityId` as player java id; cache/window refresh) | death-screen coordinates / recovery compass (`JavaLoginTranslator`). |
+| `Login` | `commonPlayerSpawnInfo.lastDeathPos` −O (side-effect: capture `entityId` as player java id; cache/window refresh) | death-screen coordinates / recovery compass (`JavaLoginTranslator`). ctor shape is pin-sensitive: the pinned 26.2 artifact ends `(..., PlayerSpawnInfo, boolean, boolean)` while current upstream master ends `(..., PlayerSpawnInfo, boolean)` - the transform uses `withCommonPlayerSpawnInfo`, which is shape-agnostic. |
 | `Respawn` | `commonPlayerSpawnInfo.lastDeathPos` −O (side-effect: clear chunk cache, recompute window) | dimension change handled by re-send semantics of the server itself. |
 | `TrackedWaypoint` | `VEC3I` waypoint `vector.y` −O | locator-bar waypoints; `CHUNK`/`AZIMUTH`/`EMPTY` data untouched. |
 | `ForgetLevelChunk` | — (side-effect: cache eviction) | x/z only, no Y. |

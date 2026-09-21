@@ -154,8 +154,11 @@ class ExtendedPacketCoverageTest {
         PlayerSpawnInfo info = new PlayerSpawnInfo(0, Key.key("minecraft:overworld"), 42L,
             GameMode.SURVIVAL, null, false, false,
             new GlobalPos(Key.key("minecraft:overworld"), Vector3i.from(8, 1952, 9)), 0, 63);
+        // NOTE: the pinned MCProtocolLib (26.2, Geyser 2.11.2-SNAPSHOT) carries TWO trailing
+        // booleans after commonPlayerSpawnInfo (current upstream master trimmed to one) - the
+        // transform only touches commonPlayerSpawnInfo, so both flags stay false here.
         var login = new ClientboundLoginPacket(1, false, new Key[] {Key.key("minecraft:overworld")},
-            20, 12, 8, true, true, false, info, false);
+            20, 12, 8, true, true, false, info, false, false);
         var loginOut = (ClientboundLoginPacket) InboundYTransforms.apply(login, offset);
         assertEquals(1952 - offset, loginOut.getCommonPlayerSpawnInfo().getLastDeathPos().getPosition().getY());
 
@@ -168,7 +171,7 @@ class ExtendedPacketCoverageTest {
         PlayerSpawnInfo noDeath = new PlayerSpawnInfo(0, Key.key("minecraft:overworld"), 42L,
             GameMode.SURVIVAL, GameMode.SURVIVAL, false, false, null, 0, 63);
         var loginNoDeath = new ClientboundLoginPacket(1, false, new Key[] {Key.key("minecraft:overworld")},
-            20, 12, 8, true, true, false, noDeath, false);
+            20, 12, 8, true, true, false, noDeath, false, false);
         assertSame(loginNoDeath, InboundYTransforms.apply(loginNoDeath, offset));
     }
 
