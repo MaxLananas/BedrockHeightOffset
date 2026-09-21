@@ -6,6 +6,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.Serverbound
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandSignedPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundPickItemFromBlockPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundSetCommandBlockPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundSetCommandMinecartPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundSetJigsawBlockPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundSetStructureBlockPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundBlockEntityTagQueryPacket;
@@ -61,10 +62,12 @@ public final class OutboundYTransforms {
             || packet instanceof ServerboundUseItemOnPacket;
     }
 
-    /** Chat commands carry their position as text; frame-translated like movement (sender's frame). */
+    /** Chat commands and command-block edits carry their position as text; frame-translated like movement (sender's frame). */
     public static boolean isCommandPacket(Object packet) {
         return packet instanceof ServerboundChatCommandSignedPacket
-            || packet instanceof ServerboundChatCommandPacket;
+            || packet instanceof ServerboundChatCommandPacket
+            || packet instanceof ServerboundSetCommandBlockPacket
+            || packet instanceof ServerboundSetCommandMinecartPacket;
     }
 
     /**
@@ -137,7 +140,19 @@ public final class OutboundYTransforms {
             return p.withPosition(shift(p.getPosition(), offset));
         }
         if (packet instanceof ServerboundSetCommandBlockPacket p) {
-            return p.withPosition(shift(p.getPosition(), offset));
+            // Builder contract: the command TEXT is authored in window space like everything the
+            // player sees - its absolute Ys are shifted here so the stored command runs in real
+            // space forever (the offset at edit time converts view -> world exactly once).
+            ServerboundSetCommandBlockPacket out = p.withPosition(shift(p.getPosition(), offset));
+            String rewritten = commands.enabled()
+                ? CommandYRewrite.rewrite(p.getCommand(), offset, commands) : null;
+            return rewritten == null ? out : out.withCommand(rewritten);
+        }
+        if (packet instanceof ServerboundSetCommandMinecartPacket p && commands.enabled()) {
+            String rewritten = CommandYRewrite.rewrite(p.getCommand(), offset, commands);
+            if (rewritten != null) {
+                return p.withCommand(rewritten);
+            }
         }
         if (packet instanceof ServerboundSetStructureBlockPacket p) {
             // Only the target position is absolute; offset and size are relative.

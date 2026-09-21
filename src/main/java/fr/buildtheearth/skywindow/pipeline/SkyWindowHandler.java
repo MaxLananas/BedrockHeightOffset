@@ -161,7 +161,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                 ctx.fireChannelRead(login);
                 return;
             }
-            Object translated = InboundYTransforms.apply(login, offset);
+            Object translated = InboundYTransforms.apply(login, offset, core.commandConfig());
             if (translated != login) {
                 state.inTranslated.increment();
                 if (state.watch) {
@@ -182,7 +182,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                 ctx.fireChannelRead(respawn);
                 return;
             }
-                Object translated = InboundYTransforms.apply(respawn, offset);
+                Object translated = InboundYTransforms.apply(respawn, offset, core.commandConfig());
             if (translated != respawn) {
                 state.inTranslated.increment();
                 if (state.watch) {
@@ -255,7 +255,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             ctx.fireChannelRead(packet);
             return;
         }
-        Object translated = InboundYTransforms.apply(packet, offset);
+        Object translated = InboundYTransforms.apply(packet, offset, core.commandConfig());
         if (translated != packet) {
             state.inTranslated.increment();
             if (state.watch) {

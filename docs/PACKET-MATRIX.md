@@ -109,3 +109,29 @@ that dispatches to Geyser's packet listeners) exactly like a forwarded server pa
 without re-entering the transform. Injecting at the manager's own context would skip the manager and
 die at the netty tail (silent discard) — the pipeline fact that matters: `flush-handler` is
 outbound-only and `manager` is the terminal *inbound* handler.
+
+## Command payloads: text and NBT carry positions too
+
+Position-bearing *text* is a first-class part of this matrix. Absolute Ys inside command payloads
+are rewritten with the same ±O discipline as packets:
+
+| Packet | Direction | What is shifted | Notes |
+|---|---|---|---|
+| `ServerboundChatCommandPacket` | out (+O) | command text, full vanilla grammar | `CommandYRewrite`: every positional command + recursive `execute ... run`, SNBT/quote-safe tokenization. |
+| `ServerboundChatCommandSignedPacket` | out (+O) | command text **only when `signatures` is empty** | A signed command's text is signature-covered: it is forwarded byte-identical (see ADR). |
+| `ServerboundSetCommandBlockPacket` | out (+O) | block `position` **and** the `command` string | The stored command is authored in window space and runs in real space forever. |
+| `ServerboundSetCommandMinecartPacket` | out (+O) | the `command` string | No position field at all - the text is the position carrier. |
+| `ClientboundBlockEntityDataPacket` | in (−O) | block `position`, plus the `Command` string inside the `NbtMap` (other tags byte-identical) | A windowed builder re-opening the command-block editor sees window-space coordinates again; round-trips exactly with the edit path. |
+
+The vanilla grammar table lives with its unit tests (`CommandYRewrite` javadoc,
+`CommandGrammarTest`); custom plugin commands are configured through
+`command-position-schemas` / `rewrite-commands`.
+
+## Coverage is CI-enforced, not promised
+
+`dev/audit/packet_coverage.py` (CI step "Packet coverage audit") walks the MCProtocolLib packet
+classes and **fails the build** when any packet with a positional field is not referenced by its
+transform chain. Two relative-quantity exclusions are reviewed and documented in
+`dev/audit/coverage_allowlist.txt` (`ClientboundSetEntityMotionPacket.movement` = velocity,
+`ServerboundInteractPacket.location` = entity-local INTERACT_AT click offset). Login/configuration
+states contain no positional fields at all (verified in the same audit).

@@ -21,6 +21,11 @@ jobs:
           cache: maven
       - name: Coordinate-math oracle (Python mirror of WindowRules/SectionCodec)
         run: python3 dev/verify/oracle.py 5
+      - name: Packet coverage audit (enforces the "every packet" contract)
+        run: |
+          git clone --depth 1 https://github.com/GeyserMC/MCProtocolLib "$RUNNER_TEMP/mcpl-audit" \
+            || { echo "::warning::MCProtocolLib clone failed; coverage audit skipped"; exit 0; }
+          python3 dev/audit/packet_coverage.py "$RUNNER_TEMP/mcpl-audit" src/main/java
       - name: Compile and test against Geyser ${{ vars.GEYSER_VERSION || '2.11.2-SNAPSHOT' }}
         run: |
           set +e

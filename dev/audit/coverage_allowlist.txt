@@ -1,0 +1,8 @@
+# Packet coverage allowlist (keep EMPTY of packets that carry ABSOLUTE positions -
+# see dev/audit/packet_coverage.py). Format: one packet simple name per line, '#' comment says WHY.
+#
+# Reviewed 2026-09-21 (this audit's first run forced these two reviews):
+#
+ClientboundSetEntityMotionPacket   # 'movement' is a VELOCITY vector (relative, MojangLaw #2: never rescaled)
+ServerboundInteractPacket          # 'location' is the INTERACT_AT click offset in ENTITY-LOCAL space
+                                   # (vanilla ArmorStand.interactAt reads vec3.y in 0..2 to pick the slot)

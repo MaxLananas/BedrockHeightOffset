@@ -37,6 +37,10 @@ public final class SkyWindowConfig {
     public int maxOffsetBlocks = 0;
     /** Chat commands whose absolute Y is rewritten. Empty string disables rewriting. */
     public Set<String> rewriteCommands = new HashSet<>(Arrays.asList("tp", "tppos", "teleport"));
+    /** The built-in vanilla grammar (setblock/fill/clone/execute/... every positional command). */
+    public boolean rewriteVanillaCommands = true;
+    /** Custom plugin commands with explicit Y-token indices (0 = command name) for the rewriter. */
+    public java.util.Map<String, java.util.List<Integer>> commandSchemas = java.util.Map.of();
     /** Log one line per window switch (they are rare by construction). */
     public boolean logSwitches = true;
     /** Parse-time findings (invalid values, unknown keys); logged by the core, never fatal. */
@@ -69,6 +73,8 @@ public final class SkyWindowConfig {
         config.maxOffsetBlocks = alignToSection(integer(props, "max-offset-blocks", config.maxOffsetBlocks, warnings));
         String commands = props.getProperty("rewrite-commands", "tp,tppos,teleport").toLowerCase(Locale.ROOT).trim();
         config.rewriteCommands = commands.isEmpty() ? Set.of() : new HashSet<>(Arrays.asList(commands.split("\\s*,\\s*")));
+        config.rewriteVanillaCommands = bool(props, "rewrite-vanilla-commands", config.rewriteVanillaCommands);
+        config.commandSchemas = parseSchemas(props.getProperty("command-position-schemas", ""), warnings);
         config.logSwitches = bool(props, "log-switches", config.logSwitches);
         config.warnings = List.copyOf(warnings);
         return config;
@@ -100,8 +106,17 @@ public final class SkyWindowConfig {
             # 0 = automatically cap the offset so the world top stays reachable.
             max-offset-blocks=0
             # Chat commands whose absolute Y coordinate is rewritten into real space.
-            # Leave empty to disable. Only unsigned commands are ever modified.
+            # Vanilla positional commands (tp, setblock, fill, clone, execute..., the whole
+            # grammar) are always rewritten while rewrite-vanilla-commands=true. The list below
+            # adds custom plugin commands using the "first coordinate triple" rule. Only unsigned
+            # commands are ever modified.
+            rewrite-vanilla-commands=true
             rewrite-commands=tp,tppos,teleport
+            # Custom plugin commands with explicit shapes: name:yTokenIndex[,index...], entries
+            # separated by ';'. Token indices count from 0 = the command name. Example (a /warp
+            # builder command taking two triples whose Ys sit at tokens 3 and 6):
+            #   command-position-schemas=btebuild:3,6
+            command-position-schemas=
             log-switches=true
             """;
     }
@@ -138,7 +153,50 @@ public final class SkyWindowConfig {
         "enabled", "switch-margin-blocks", "switch-cooldown-ms", "freeze-ms",
         "freeze-hold-actions", "freeze-hold-movement", "announce-switches",
         "chunk-cache-max-chunks", "chunk-cache-max-megabytes", "max-offset-blocks",
-        "rewrite-commands", "log-switches");
+        "rewrite-commands", "rewrite-vanilla-commands", "command-position-schemas", "log-switches");
+
+    /**
+     * {@code name:1,2,3;other:4} -> {@code {name: [1, 2, 3], other: [4]}}. Malformed entries become
+     * load-time warnings and are skipped; valid ones keep working (fail-soft parsing).
+     */
+    private static java.util.Map<String, java.util.List<Integer>> parseSchemas(String raw, List<String> warnings) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return java.util.Map.of();
+        }
+        java.util.Map<String, java.util.List<Integer>> out = new java.util.LinkedHashMap<>();
+        for (String entry : raw.split(";")) {
+            entry = entry.trim().toLowerCase(Locale.ROOT);
+            if (entry.isEmpty()) {
+                continue;
+            }
+            String[] halves = entry.split(":", 2);
+            if (halves.length != 2 || halves[0].isEmpty() || halves[1].isEmpty()) {
+                warnings.add("invalid command-position-schemas entry '" + entry + "' (expected name:i,j,...)");
+                continue;
+            }
+            java.util.List<Integer> indices = new java.util.ArrayList<>();
+            boolean ok = true;
+            for (String part : halves[1].split(",")) {
+                try {
+                    int index = Integer.parseInt(part.trim());
+                    if (index < 1 || index > 64) {
+                        ok = false;
+                        break;
+                    }
+                    indices.add(index);
+                } catch (NumberFormatException e) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (!ok || indices.isEmpty()) {
+                warnings.add("invalid command-position-schemas entry '" + entry + "' (indices must be 1..64)");
+                continue;
+            }
+            out.put(halves[0], List.copyOf(indices));
+        }
+        return java.util.Collections.unmodifiableMap(out);
+    }
 
     private static void warnUnknownKeys(Properties props, List<String> warnings) {
         for (String key : props.stringPropertyNames()) {

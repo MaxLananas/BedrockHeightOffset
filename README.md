@@ -313,7 +313,9 @@ To check: `/skywindow doctor` from a Bedrock client (and see below).
 | `announce-switches` | `false` | Send the player a chat line when their window is re-homed. Off by default - switches are meant to be invisible. |
 | `chunk-cache-max-chunks` / `chunk-cache-max-megabytes` | `2048` / `96` | Per-player original-chunk cache bounds (LRU). This is what makes switches seamless; smaller means possible terrain holes right after a switch (self-healing on the next natural chunk send). |
 | `max-offset-blocks` | `0` (auto) | Hard cap on the offset. 0 derives it from the dimension (recommended); set only to shrink reachability, e.g. on a server whose build limit exceeds your testing confidence. |
-| `rewrite-commands` | `tp,tppos,teleport` | Unsigned chat commands whose absolute Y is rewritten. Empty = off. |
+| `rewrite-vanilla-commands` | `true` | Rewrites **every positional vanilla command** (the full grammar: `tp`, `teleport`, `setblock`, `fill`, `clone`, `fillbiome`, `summon`, `particle`, `playsound`, `damage`, `data`, `item`, `loot`, `setworldspawn`, `spawnpoint`, `spreadplayers`, `forceload`, `place`, `placefeature`, and recursive `execute ... run` chains). |
+| `rewrite-commands` | `tp,tppos,teleport` | Extra **custom plugin commands**, rewritten using the "first coordinate triple" rule. Empty = none. Only unsigned commands are ever modified. |
+| `command-position-schemas` | *(empty)* | Custom commands with richer shapes: `name:yTokenIndex[,index...];...` (token indices count from 0 = the command name). Example: `command-position-schemas=btebuild:3,6` teaches `/btebuild 10 20 30 40 50 60`-style commands. Schemas override the vanilla grammar for a clashing name. |
 | `log-switches` | `true` | One info-log line per switch (they are rare). |
 
 There is deliberately no "window size" / "max height" knob: those were footguns in 3.x. The window
@@ -342,6 +344,9 @@ Bedrock-side, per player (development diagnostics are real, not simulated):
 - `/skywindow window <realY>` — force the *next* switch to home the window at a given real Y (QA tool;
   it goes through the normal switch machinery on the session event loop - freeze, replay, backoff and
   the derived cap all apply exactly as during automatic switches).
+- `/skywindow explain <x y z>` — the builder's converter: shows what the server *executes* (real space)
+  for the coordinates you see/type (window space), the inverse, and the rewritten `/tp` preview.
+  Use it whenever a plugin message or a teammate's coordinates look "off by ~1400".
 
 If a Bedrock player reports rubber-banding at altitude, in order: `/skywindow doctor` (world manager +
 attached), `/skywindow watch on` while reproducing, `/skywindow recent` output. All numbers on screen come from
@@ -401,12 +406,14 @@ tool can fully prove — so here is exactly what *was* verified and where the re
   is replayed before the snap, but the client's own motion keeps running). Cooldown + margin make
   this rare (~once per 450 climbed blocks); it is *cosmetic* by the invariant — positions stay
   consistent. Old SkyWindow's equivalent moment was the rubber-band; this one leaves no correction.
-- **Commands with absolute coordinates are only rewritten for the configured `tp`-family**, only
-  unsigned, and only the first position triple. `/setblock`, `/fill`, `/clone`, `/place` etc.
-  interpret the numbers the client sends literally: use relative coordinates (`~ ~ ~`), or
-  `execute positioned`, or run them from the server console / a Java client. (This is a
-  documentation-grade limitation of *any* wire-level Y offset scheme — the server has no way to
-  know a player's view frame.)
+- **Command coordinates: the full vanilla grammar is rewritten** (see `rewrite-vanilla-commands`),
+  including multi-triple commands (`fill`/`clone`) and recursive `execute ... run` chains, and the
+  same rewrite covers command blocks (`SetCommandBlock`/command-minecart text) and the
+  command-block editor display (block-entity `Command` NBT). Two real limits remain, both
+  structural: **custom plugin commands** with positions need `command-position-schemas` (or
+  `rewrite-commands`) to be taught, and **signed chat commands** (`enforce-secure-profile`) can
+  never be touched (their signature covers the text). Relative coordinates (`~ ~ ~`) work
+  everywhere by construction - the server resolves them against its own (real-space) position.
 - **Piston animation and block-place sounds** on the Spigot platform are emitted by Geyser's own
   platform listeners with *real* coordinates; for windowed players that can make a piston at the
   world floor briefly ghost into a high player's view (or a place-sound not be heard at the top).
@@ -425,8 +432,6 @@ tool can fully prove — so here is exactly what *was* verified and where the re
   300000 is not). That ceiling is Geyser's own chunk format cost, and SkyWindow inherits it; SkyWindow's cache
   is byte-capped so it never explodes, but such servers are impractical *for Geyser itself*, not
   for SkyWindow specifically.
-- **Signed chat commands** (`enforce-secure-profile`) can't be rewritten (signatures). SkyWindow sends
-  them untouched; if an OP needs windowed absolute coords there, use console.
 - **`/skywindow window <realY>` is deliberately the only forcing tool**: it re-homes the next switch
   through the *normal* switch machinery (event loop, backoff, freeze, chunk replay) rather than
   assigning an offset behind the pipeline's back — the 3.x habit of setting offsets asynchronously

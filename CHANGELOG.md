@@ -4,6 +4,45 @@ All notable changes to SkyWindow. The format follows [Keep a Changelog](https://
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) against the
 pinned Geyser build (see README "Version compatibility" for why that pin *is* the API surface).
 
+## [1.1.1] - 2026-09-21
+
+Builders' commands release: the Y-rewrite now covers the **entire positional command surface** -
+chat commands, command blocks, command minecarts and the command-block editor display - and the
+"every packet" contract is machine-enforced in CI.
+
+### Added
+
+- **Full vanilla command grammar rewrite** (`CommandYRewrite` v2): `tp`/`teleport` (all forms
+  including `facing <pos>`), `setblock`, `fill`, `fillbiome`, `clone` (every corner), `summon`,
+  `particle`, `playsound`, `damage ... at`, `data|item ... block`, `loot insert|spawn|replace block`,
+  `setworldspawn`, `spawnpoint`, `spreadplayers ... under`, `forceload`, `place`, `placefeature`, and
+  **recursive `execute ... run` chains** (`positioned`/`facing`/`if|unless block|blocks|loaded|biome|
+  items block`/`summon`/`store ... block`, depth-capped). Relative (`~`/`^`) coordinates are never
+  touched (the server resolves them in real space). SNBT/quoted regions are tokenization-protected
+  and survive byte-identical.
+- **Command blocks are now fully translated**: `SetCommandBlock` rewrites the stored `command`
+  text alongside its position (edits are authored in window space, stored in real space), and the
+  block-entity `Command` NBT on `ClientboundBlockEntityDataPacket` is rewritten back down for the
+  editor display. Command minecart text (`SetCommandMinecart`) is covered too.
+- **Custom plugin commands**: `command-position-schemas= name:i,j;...` (explicit Y-token indices,
+  overrides the vanilla grammar per name) joins the legacy `rewrite-commands` first-triple allowlist;
+  new master switch `rewrite-vanilla-commands` (default `true`).
+- **`/skywindow explain <x y z>`**: builder converter (window ↔ real) with the rewritten `/tp`
+  preview.
+- **CI packet-coverage audit** (`dev/audit/packet_coverage.py`): fails the build if MCProtocolLib
+  grows any positional packet the transform chains do not mention. Two reviewed relative-quantity
+  exclusions documented in `dev/audit/coverage_allowlist.txt`.
+- `docs/TERRA-NOTES.md`: how TerraPlusPlus/TerraPlusMinus/TerraMinusMinus place real-world altitude
+  in Java worlds (they clamp to `maxWorldY`) and what that validates about SkyWindow.
+
+### Changed
+
+- `rewrite-commands` alone no longer decides whether rewriting is active; `rewrite-vanilla-commands`
+  (default `true`) is the master switch for the built-in grammar. Servers that want the old
+  allowlist-only behavior set `rewrite-vanilla-commands=false`.
+- `InboundYTransforms.apply` gained a config-aware overload; the two-argument form keeps the vanilla
+  grammar (behavior unchanged for callers).
+
 ## [1.1.0] - 2026-09-21
 
 Robustness release: an upstream-source re-audit (Geyser + MCProtocolLib master @ 2026-09-21) closed

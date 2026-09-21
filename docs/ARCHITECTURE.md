@@ -163,3 +163,33 @@ docs/PACKET-MATRIX.md + the transform switch accordingly → staging checklist
 *missing* from it is the only way this design can be wrong on new protocol versions, and the
 fail-safe makes even that degrade into "untranslated for that packet type" (visible), not
 "corrupted state".
+
+## ADR 2026-09-21 - Y-relativity and command rewriting
+
+**Decision: a position is absolute if and only if the server resolves it against world space; those
+we shift. Everything the server resolves against a *frame* (movement deltas, velocities, entity-local
+offsets, `PositionElement.Y`-flagged teleports, `~`/`^` in commands) is a relative quantity and is
+never touched (MojangA.md N°2).**
+
+Applied to commands this yields the one non-obvious rule of the command rewriter:
+
+- **Relative tokens (`~`, `^`) are never rewritten.** The server evaluates them against the sender's
+  *server-side* position, which is real space. The text has no idea a window exists.
+- **Absolute tokens are rewritten +O** (view → world) exactly once, at edit/issue time. From then on
+  the command is world-space forever: a command block stores the real-space command, executes it in
+  real space, and shows it back to a windowed builder at −O (block-entity `Command` NBT rewrite).
+- **Signed chat commands are forwarded byte-identical** when signatures are present - the signature
+  covers the text (see client-translator fields on `ChatCommandSignedPacket`). Geyser's own
+  `GeyserSession#sendCommand` sends *unsigned* commands, so Bedrock players keep full coverage; the
+  gate exists for genuinely signed Java text that happens to cross the bridge.
+
+The grammar (`CommandYRewrite`) is table-driven per vanilla command; `execute` chains are segmented
+on their subcommand keywords (`positioned`/`facing`/`if`/`store`/`summon`/`run`, ...) and the tail
+after `run` is parsed recursively (depth-capped). Tokenization preserves `split(" ")` semantics
+(pinned by tests) while protecting SNBT/quoted regions so `{"a b"}` payloads survive byte-identical.
+Custom plugin commands are taught per-server via `command-position-schemas` (explicit Y-token
+indices) or `rewrite-commands` (first coordinate triple) - a wire-level offset cannot infer an
+unknown command's shape, so the shape is made configuration instead of a guess.
+
+The "every packet" contract is machine-checked: `dev/audit/packet_coverage.py` fails CI when
+MCProtocolLib grows a positional packet that the chains do not mention.

@@ -42,9 +42,11 @@ public final class SkyWindowCommand {
             case "doctor" -> doctor(core, session, state);
             case "stats" -> stats(session, state, args);
             case "window" -> window(core, session, state, args);
+            case "explain" -> explain(session, state, args);
             default -> send(session,
                 "§7Usage: §f/skywindow info §7| §f/skywindow watch <on|off> §7| §f/skywindow recent",
-                "§7       §f/skywindow doctor §7| §f/skywindow stats [reset] §7| §f/skywindow window <realY>");
+                "§7       §f/skywindow doctor §7| §f/skywindow stats [reset] §7| §f/skywindow window <realY>",
+                "§7       §f/skywindow explain <x y z> §7(builder coordinates converter)");
         }
     }
 
@@ -221,6 +223,37 @@ public final class SkyWindowCommand {
                 + " §7(overflow drops: §f" + (state.heldOverflow.sum() - b[8]) + "§7)",
             "§7freeze duration: §f" + freezeAvg + " §7| last: §f" + (state.lastFreezeNanos / 1_000L) + " µs",
             "§7last frame used while frozen: §f" + state.frozenFrameOffset + " §7| now: §f" + state.offset);
+    }
+
+    /**
+     * Builder converter: the coordinates the player SEES (window space) -> what the server executes
+     * (real space), and the inverse. This is exactly the rewrite rule applied to typed commands.
+     */
+    private static void explain(GeyserSession session, SkyWindowSession state, String[] args) {
+        if (args.length < 4) {
+            send(session, "§7Usage: §f/skywindow explain <x y z> §7(coordinates as you SEE them)");
+            return;
+        }
+        double[] parsed = new double[3];
+        for (int i = 0; i < 3; i++) {
+            String token = args[i + 1].trim();
+            try {
+                parsed[i] = Double.parseDouble(token.startsWith("~") ? token.substring(1).isEmpty()
+                    ? "0" : token.substring(1) : token);
+            } catch (NumberFormatException e) {
+                send(session, "§c'" + token + "' is not a coordinate number (use 120.5, ~100, ~ ...).");
+                return;
+            }
+        }
+        int offset = state == null ? 0 : state.offset;
+        double viewY = parsed[1];
+        double realY = viewY + offset;
+        send(session,
+            "§bSkyWindow explain §7(offset §f" + offset + "§7):",
+            "§7you see/type (window): §f" + parsed[0] + " " + viewY + " " + parsed[2],
+            "§7server executes (real): §f" + parsed[0] + " " + realY + " " + parsed[2],
+            "§7inverse (real -> view): §f" + parsed[0] + " " + (viewY - offset) + " " + parsed[2],
+            "§7command preview: §f/tp " + parsed[0] + " " + realY + " " + parsed[2]);
     }
 
     private static int currentRealY(GeyserSession session, SkyWindowSession state) {

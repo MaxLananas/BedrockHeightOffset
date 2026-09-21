@@ -2,6 +2,8 @@ package fr.buildtheearth.skywindow.translate;
 
 import org.cloudburstmc.math.vector.Vector3d;
 import org.cloudburstmc.math.vector.Vector3i;
+import org.cloudburstmc.nbt.NbtMap;
+import org.cloudburstmc.nbt.NbtMapBuilder;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.MinecartStep;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.EntityMetadata;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.GlobalPos;
@@ -77,6 +79,11 @@ public final class InboundYTransforms {
      * @return the transformed packet, or {@code packet} itself when nothing changed
      */
     public static Object apply(Object packet, int offset) {
+        return apply(packet, offset, CommandYRewrite.VANILLA_DEFAULT);
+    }
+
+    /** Same transform with the server's command-rewrite config (drives command-block display NBT). */
+    public static Object apply(Object packet, int offset, CommandYRewrite.Config commands) {
         if (offset == 0) {
             return packet;
         }
@@ -127,7 +134,25 @@ public final class InboundYTransforms {
             return p.withPosition(shift(p.getPosition(), offset));
         }
         if (packet instanceof ClientboundBlockEntityDataPacket p) {
-            return p.withPosition(shift(p.getPosition(), offset));
+            ClientboundBlockEntityDataPacket out = p.withPosition(shift(p.getPosition(), offset));
+            // Command blocks: the stored command is real-space (the server runs it there), but a
+            // windowed builder reopening the editor must SEE window-space coordinates - shift the
+            // Command tag's Ys back down. Round-trips exactly with the SetCommandBlock edit path.
+            NbtMap nbt = p.getNbt();
+            if (nbt != null && commands.enabled() && nbt.get("Command") instanceof String command) {
+                String rewritten = CommandYRewrite.rewrite(command, -offset, commands);
+                if (rewritten != null) {
+                    NbtMapBuilder builder = NbtMap.builder();
+                    for (java.util.Map.Entry<String, Object> entry : nbt.entrySet()) {
+                        if (!"Command".equals(entry.getKey())) {
+                            builder.put(entry.getKey(), entry.getValue());
+                        }
+                    }
+                    builder.put("Command", rewritten);
+                    return out.withNbt(builder.build());
+                }
+            }
+            return out;
         }
         if (packet instanceof ClientboundOpenSignEditorPacket p) {
             // Geyser forwards this straight into Bedrock's OpenSignPacket position: sign editing at
