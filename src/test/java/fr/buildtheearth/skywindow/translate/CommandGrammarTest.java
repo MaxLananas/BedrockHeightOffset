@@ -2,6 +2,7 @@ package fr.buildtheearth.skywindow.translate;
 
 import org.cloudburstmc.math.vector.Vector3i;
 import org.cloudburstmc.nbt.NbtMap;
+import org.cloudburstmc.nbt.NbtMapBuilder;
 import org.geysermc.mcprotocollib.protocol.data.game.level.block.BlockEntityType;
 import org.geysermc.mcprotocollib.protocol.data.game.level.block.CommandBlockMode;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundBlockEntityDataPacket;
@@ -177,11 +178,11 @@ class CommandGrammarTest {
 
     @Test
     void commandBlockDisplaySeesWindowSpace() {
-        NbtMap nbt = NbtMap.builder()
-            .put("id", "minecraft:command_block")
-            .put("Command", "setblock 1 64 2 stone")
-            .put("CustomName", "keep me")
-            .build();
+        NbtMapBuilder mapBuilder = NbtMap.builder();
+        mapBuilder.put("id", "minecraft:command_block");
+        mapBuilder.put("Command", "setblock 1 64 2 stone");
+        mapBuilder.put("CustomName", "keep me");
+        NbtMap nbt = mapBuilder.build();
         ClientboundBlockEntityDataPacket packet = new ClientboundBlockEntityDataPacket(
             Vector3i.from(1, 2, 3), BlockEntityType.COMMAND_BLOCK, nbt);
         ClientboundBlockEntityDataPacket out = (ClientboundBlockEntityDataPacket)
