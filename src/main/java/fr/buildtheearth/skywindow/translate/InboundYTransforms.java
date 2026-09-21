@@ -79,7 +79,7 @@ public final class InboundYTransforms {
      * @return the transformed packet, or {@code packet} itself when nothing changed
      */
     public static Object apply(Object packet, int offset) {
-        return apply(packet, offset, CommandYRewrite.VANILLA_DEFAULT);
+        return apply(packet, offset, CommandYRewrite.Config.VANILLA_DEFAULT);
     }
 
     /** Same transform with the server's command-rewrite config (drives command-block display NBT). */
