@@ -84,6 +84,12 @@ public final class InboundYTransforms {
 
     /** Same transform with the server's command-rewrite config (drives command-block display NBT). */
     public static Object apply(Object packet, int offset, CommandYRewrite.Config commands) {
+        return apply(packet, offset, commands, null);
+    }
+
+    /** Full form: config + the server's command tree as shape oracle for command payloads. */
+    public static Object apply(Object packet, int offset, CommandYRewrite.Config commands,
+                               CommandTreeIndex tree) {
         if (offset == 0) {
             return packet;
         }
@@ -140,7 +146,7 @@ public final class InboundYTransforms {
             // Command tag's Ys back down. Round-trips exactly with the SetCommandBlock edit path.
             NbtMap nbt = p.getNbt();
             if (nbt != null && commands.enabled() && nbt.get("Command") instanceof String command) {
-                String rewritten = CommandYRewrite.rewrite(command, -offset, commands);
+                String rewritten = CommandYRewrite.rewrite(command, -offset, commands, tree);
                 if (rewritten != null) {
                     NbtMapBuilder builder = NbtMap.builder();
                     for (java.util.Map.Entry<String, Object> entry : nbt.entrySet()) {

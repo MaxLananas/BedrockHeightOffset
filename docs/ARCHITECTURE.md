@@ -193,3 +193,16 @@ unknown command's shape, so the shape is made configuration instead of a guess.
 
 The "every packet" contract is machine-checked: `dev/audit/packet_coverage.py` fails CI when
 MCProtocolLib grows a positional packet that the chains do not mention.
+
+### ADR addendum (same day): the universal command oracle
+
+Naming commands cannot scale to "every plugin on every BTE server", and the user-facing contract is
+that commands are **never changed to fit the plugin**. So the shape knowledge is not coded at all:
+it is *read* from the server's own Brigadier tree (`ClientboundCommandsPacket`, indexed by
+`CommandTreeIndex`). The tree already answers "which of these tokens is a Y?" with the same
+authority as the command dispatcher that will execute the text - typed coordinate arguments
+(including every plugin command that uses the standard position types), nested `run <command>`
+recursion, and alias redirects. The vanilla grammar table survives purely as a parse-miss fallback;
+`command-position-schemas` survives for argument shapes that carry coordinates without typing them
+as coordinates (an opaque `"x,y,z"` token), which no oracle can see. Tree parse success with zero
+Y slots is definitive (e.g. `/say hi 1 2 3`); tree parse failure falls through to the fallbacks.

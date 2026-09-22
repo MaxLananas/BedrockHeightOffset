@@ -75,6 +75,16 @@ public final class CommandYRewrite {
      * @return the rewritten message, or null when no rewrite applies
      */
     public static String rewrite(String message, int offset, Config config) {
+        return rewrite(message, offset, config, null);
+    }
+
+    /**
+     * Same, with the server's command tree as primary shape oracle. When {@code tree} parses the
+     * message, its exact Y slots win (and an empty slot set is a definitive "nothing to shift");
+     * when it cannot parse the message at all, the vanilla grammar and configured allowlists still
+     * apply. This is what makes every plugin command work without configuration.
+     */
+    public static String rewrite(String message, int offset, Config config, CommandTreeIndex tree) {
         if (message == null || message.isEmpty() || offset == 0 || !config.enabled()) {
             return null;
         }
@@ -92,8 +102,22 @@ public final class CommandYRewrite {
         if (tokens.size() < 2) {
             return null;
         }
-        BitSet ySlots = new BitSet(tokens.size());
-        collectSlots(tokens, 0, config, ySlots, 0);
+        boolean fromTree = false;
+        BitSet ySlots;
+        if (tree != null) {
+            BitSet treeSlots = tree.ySlots(tokens);
+            if (treeSlots != null) {
+                ySlots = treeSlots;
+                fromTree = true;
+            } else {
+                ySlots = new BitSet(tokens.size());
+            }
+        } else {
+            ySlots = new BitSet(tokens.size());
+        }
+        if (!fromTree) {
+            collectSlots(tokens, 0, config, ySlots, 0);
+        }
         List<String> out = new ArrayList<>(tokens);
         boolean any = false;
         for (int i = ySlots.nextSetBit(0); i >= 0; i = ySlots.nextSetBit(i + 1)) {
@@ -115,9 +139,10 @@ public final class CommandYRewrite {
 
     /**
      * {@code split(" ")} semantics (interior empties kept, trailing dropped) with SNBT and quoted
-     * regions protected so their spaces do not create tokens.
+     * regions protected so their spaces do not create tokens. Package-visible for
+     * {@link CommandTreeIndex}, which must tokenize exactly the same way.
      */
-    private static List<String> tokenize(String command) {
+    static List<String> tokenize(String command) {
         char[] chars = command.toCharArray();
         int depth = 0;
         boolean quoted = false;
@@ -411,6 +436,10 @@ public final class CommandYRewrite {
         return parseAbsoluteNumber(token) != null;
     }
 
+    /**
+     * A parsed absolute number, or null when the token is relative ({@code ~}/{@code ^}) or not a
+     * number at all. Package-visible for {@link CommandTreeIndex}.
+     */
     static Double parseAbsoluteNumber(String token) {
         try {
             return Double.parseDouble(token);

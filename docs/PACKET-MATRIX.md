@@ -135,3 +135,12 @@ transform chain. Two relative-quantity exclusions are reviewed and documented in
 `dev/audit/coverage_allowlist.txt` (`ClientboundSetEntityMotionPacket.movement` = velocity,
 `ServerboundInteractPacket.location` = entity-local INTERACT_AT click offset). Login/configuration
 states contain no positional fields at all (verified in the same audit).
+
+## The command tree is an input, not just traffic
+
+`ClientboundCommandsPacket` (clientbound, position-free) is forwarded untouched **and indexed**:
+its Brigadier nodes declare every command of every plugin with typed argument nodes, which is the
+universal shape oracle for command-text rewriting (`CommandTreeIndex`). Re-sent by the server on
+join and on op/permission changes; the index is rebuilt each time. Parser widths honored:
+`VEC3`/`BLOCK_POS` = 3 tokens (Y = middle), `COLUMN_POS`/`VEC2`/`ROTATION` = 2 (no Y), `MESSAGE`
+and greedy strings = rest, nested `command` arguments = recursive root parse, everything else = 1.

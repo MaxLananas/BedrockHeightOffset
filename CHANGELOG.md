@@ -4,6 +4,31 @@ All notable changes to SkyWindow. The format follows [Keep a Changelog](https://
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) against the
 pinned Geyser build (see README "Version compatibility" for why that pin *is* the API surface).
 
+## [1.2.0] - 2026-09-21
+
+The universal commands release: **every command of every plugin now works with zero configuration**.
+Instead of naming commands, SkyWindow reads the Brigadier command tree the server itself sends
+(`ClientboundCommandsPacket`) and shifts exactly the tokens the server would parse as coordinates.
+
+### Added
+
+- **`CommandTreeIndex`**: a walker over the server's declared command tree (literal-first matching,
+  argument fallback with backtracking, redirect/alias expansion, nested-command recursion).
+  `minecraft:vec3`/`minecraft:block_pos` arguments carry a Y that gets shifted; `column_pos`/
+  `vec2`/`rotation` deliberately carry none; `MESSAGE`/greedy strings eat their tail untouched;
+  plain numeric arguments named `y*`/`y1`/`maxHeight`-style shift like coordinates (plugin
+  x/y/z-integer commands); `execute ... run` and run-as commands recurse into the root tree.
+- The tree is the **primary** oracle for chat commands, command blocks, command minecarts and the
+  command-block editor display (both directions). A plugin installed tomorrow is covered tomorrow,
+  with nothing to declare.
+- The built-in vanilla grammar and the `rewrite-commands`/`command-position-schemas` config remain
+  as fallbacks for messages the tree cannot parse (typos, cut text, exotic untyped shapes).
+
+### Changed
+
+- `CommandYRewrite.rewrite` gained a tree-aware form; the three-argument form keeps the exact
+  grammar-only behavior (all pinned tests unchanged).
+
 ## [1.1.1] - 2026-09-21
 
 Builders' commands release: the Y-rewrite now covers the **entire positional command surface** -

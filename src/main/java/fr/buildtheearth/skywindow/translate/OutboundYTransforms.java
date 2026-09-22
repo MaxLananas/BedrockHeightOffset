@@ -113,7 +113,13 @@ public final class OutboundYTransforms {
     }
 
     /** @return the transformed packet, or {@code packet} itself when nothing changed */
+    /** Same transform with the server's command tree as the shape oracle (see {@link CommandTreeIndex}). */
     public static Object apply(Object packet, int offset, CommandYRewrite.Config commands) {
+        return apply(packet, offset, commands, null);
+    }
+
+    public static Object apply(Object packet, int offset, CommandYRewrite.Config commands,
+                               CommandTreeIndex tree) {
         if (offset == 0) {
             return packet;
         }
@@ -145,11 +151,11 @@ public final class OutboundYTransforms {
             // space forever (the offset at edit time converts view -> world exactly once).
             ServerboundSetCommandBlockPacket out = p.withPosition(shift(p.getPosition(), offset));
             String rewritten = commands.enabled()
-                ? CommandYRewrite.rewrite(p.getCommand(), offset, commands) : null;
+                ? CommandYRewrite.rewrite(p.getCommand(), offset, commands, tree) : null;
             return rewritten == null ? out : out.withCommand(rewritten);
         }
         if (packet instanceof ServerboundSetCommandMinecartPacket p && commands.enabled()) {
-            String rewritten = CommandYRewrite.rewrite(p.getCommand(), offset, commands);
+            String rewritten = CommandYRewrite.rewrite(p.getCommand(), offset, commands, tree);
             if (rewritten != null) {
                 return p.withCommand(rewritten);
             }
@@ -176,13 +182,13 @@ public final class OutboundYTransforms {
         if (packet instanceof ServerboundChatCommandSignedPacket p && commands.enabled() && p.getSignatures().isEmpty()) {
             // Rewriting a signed command would invalidate its signature; unsigned commands (what Geyser
             // clients send - see GeyserSession#sendCommand) are safe to adjust.
-            String rewritten = CommandYRewrite.rewrite(p.getCommand(), offset, commands);
+            String rewritten = CommandYRewrite.rewrite(p.getCommand(), offset, commands, tree);
             if (rewritten != null) {
                 return p.withCommand(rewritten);
             }
         }
         if (packet instanceof ServerboundChatCommandPacket p && commands.enabled()) {
-            String rewritten = CommandYRewrite.rewrite(p.getCommand(), offset, commands);
+            String rewritten = CommandYRewrite.rewrite(p.getCommand(), offset, commands, tree);
             if (rewritten != null) {
                 return p.withCommand(rewritten);
             }

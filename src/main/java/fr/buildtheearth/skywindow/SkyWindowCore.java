@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class SkyWindowCore {
     /** What the packet-shape assumptions in docs/ have been verified against; shown by /skywindow doctor. */
-    public static final String TESTED_AGAINST = "Geyser 2.11.2-SNAPSHOT / Minecraft 1.21.10 / MCProtocolLib 26.2 @ 2026-09-21; full packet audit (game+login+configuration states, CI-enforced via dev/audit/packet_coverage.py) + full positional command grammar (CommandYRewrite v2: execute chains, command blocks, command-block NBT) - docs/PACKET-MATRIX.md carries the details";
+    public static final String TESTED_AGAINST = "Geyser 2.11.2-SNAPSHOT / Minecraft 1.21.10 / MCProtocolLib 26.2 @ 2026-09-21; universal command oracle (server Brigadier tree via ClientboundCommandsPacket = any plugin command, zero config) + fallback grammar + full packet audit (CI-enforced via dev/audit/packet_coverage.py) - docs/PACKET-MATRIX.md carries the details";
 
     private final SkyWindowExtension extension;
     private final Map<GeyserSession, SkyWindowSession> states = new ConcurrentHashMap<>();

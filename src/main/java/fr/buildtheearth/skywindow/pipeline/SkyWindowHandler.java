@@ -30,6 +30,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.Clien
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundMovePlayerPosPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundMovePlayerPosRotPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundMoveVehiclePacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundCommandsPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundPlayerActionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundUseItemOnPacket;
 
@@ -229,6 +230,12 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             ctx.fireChannelRead(forget);
             return;
         }
+        if (packet instanceof ClientboundCommandsPacket commandsPacket) {
+            // The server's Brigadier tree (every command of every plugin, with typed arguments).
+            // Indexed here so all later command translation knows exactly which tokens are
+            // coordinates - this is the universal command-shape oracle, see CommandTreeIndex.
+            state.commandTree = fr.buildtheearth.skywindow.translate.CommandTreeIndex.build(commandsPacket);
+        }
         if (packet instanceof ClientboundTeleportEntityPacket teleport) {
             if (teleport.getId() == state.playerJavaId && appliesToPlayer()) {
                 state.lastPlayerTeleport = teleport;
@@ -255,7 +262,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             ctx.fireChannelRead(packet);
             return;
         }
-        Object translated = InboundYTransforms.apply(packet, offset, core.commandConfig());
+        Object translated = InboundYTransforms.apply(packet, offset, core.commandConfig(), state.commandTree);
         if (translated != packet) {
             state.inTranslated.increment();
             if (state.watch) {
@@ -308,7 +315,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                 return;
             }
             if (offset != 0 && appliesToPlayer()) {
-                Object translated = OutboundYTransforms.apply(packet, offset, core.commandConfig());
+                Object translated = OutboundYTransforms.apply(packet, offset, core.commandConfig(), state.commandTree);
                 if (translated != packet) {
                     state.outTranslated.increment();
                     if (state.watch) {
@@ -450,12 +457,12 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                         // Frame resolution: translate under each candidate frame and replay only the
                         // interpretation whose block position is within physical reach of the player.
                         // (Identity translations - e.g. frozen frame offset 0 - are legitimate.)
-                        Object oldFrame = OutboundYTransforms.apply(packet, frozenFrame, core.commandConfig());
+                        Object oldFrame = OutboundYTransforms.apply(packet, frozenFrame, core.commandConfig(), state.commandTree);
                         if (plausible(oldFrame, playerRealY)) {
                             out = oldFrame; // sent before the snap took effect: pre-switch frame
                         } else {
                             Object newFrame = offsetNow == frozenFrame ? oldFrame
-                                : OutboundYTransforms.apply(packet, offsetNow, core.commandConfig());
+                                : OutboundYTransforms.apply(packet, offsetNow, core.commandConfig(), state.commandTree);
                             if (plausible(newFrame, playerRealY)) {
                                 out = newFrame; // sent after the snap: current frame
                             } else {
@@ -468,7 +475,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                     } else {
                         // Movement/vehicle/commands: replay with the frame they were sent in;
                         // staleness is bounded by the freeze and self-corrected by the next packet.
-                        out = OutboundYTransforms.apply(packet, frozenFrame, core.commandConfig());
+                        out = OutboundYTransforms.apply(packet, frozenFrame, core.commandConfig(), state.commandTree);
                     }
                 }
                 self.write(out, entry.promise()); // below this handler: no re-transform

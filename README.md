@@ -313,9 +313,15 @@ To check: `/skywindow doctor` from a Bedrock client (and see below).
 | `announce-switches` | `false` | Send the player a chat line when their window is re-homed. Off by default - switches are meant to be invisible. |
 | `chunk-cache-max-chunks` / `chunk-cache-max-megabytes` | `2048` / `96` | Per-player original-chunk cache bounds (LRU). This is what makes switches seamless; smaller means possible terrain holes right after a switch (self-healing on the next natural chunk send). |
 | `max-offset-blocks` | `0` (auto) | Hard cap on the offset. 0 derives it from the dimension (recommended); set only to shrink reachability, e.g. on a server whose build limit exceeds your testing confidence. |
-| `rewrite-vanilla-commands` | `true` | Rewrites **every positional vanilla command** (the full grammar: `tp`, `teleport`, `setblock`, `fill`, `clone`, `fillbiome`, `summon`, `particle`, `playsound`, `damage`, `data`, `item`, `loot`, `setworldspawn`, `spawnpoint`, `spreadplayers`, `forceload`, `place`, `placefeature`, and recursive `execute ... run` chains). |
-| `rewrite-commands` | `tp,tppos,teleport` | Extra **custom plugin commands**, rewritten using the "first coordinate triple" rule. Empty = none. Only unsigned commands are ever modified. |
-| `command-position-schemas` | *(empty)* | Custom commands with richer shapes: `name:yTokenIndex[,index...];...` (token indices count from 0 = the command name). Example: `command-position-schemas=btebuild:3,6` teaches `/btebuild 10 20 30 40 50 60`-style commands. Schemas override the vanilla grammar for a clashing name. |
+| `rewrite-vanilla-commands` | `true` | Command rewriting master layer: the **built-in fallback grammar** (used only for messages the server's command tree cannot parse) plus, together with the keys below, enables the universal mechanism. |
+| `rewrite-commands` | `tp,tppos,teleport` | *Rarely needed now.* Extra custom commands, rewritten with the "first coordinate triple" rule - a safety net for text that is not declared as typed arguments in the server's command tree. Empty = none. Only unsigned commands are ever modified. |
+| `command-position-schemas` | *(empty)* | *Rarely needed now.* Explicit Y-token indices (`name:i,j;...`) for exotic custom argument shapes. Schemas override the tree for a clashing name. |
+
+**The universal layer needs no configuration at all**: the server ships its complete Brigadier
+command tree (`ClientboundCommandsPacket`) at join, and SkyWindow reads it to know exactly which
+tokens are coordinates in **every command of every plugin** - `minecraft:vec3`/`block_pos`
+arguments shift their Y, `execute ... run` recurses into the nested command, alias redirects are
+followed. A plugin command SkyWindow has never heard of works the day the plugin is installed.
 | `log-switches` | `true` | One info-log line per switch (they are rare). |
 
 There is deliberately no "window size" / "max height" knob: those were footguns in 3.x. The window
@@ -406,14 +412,17 @@ tool can fully prove — so here is exactly what *was* verified and where the re
   is replayed before the snap, but the client's own motion keeps running). Cooldown + margin make
   this rare (~once per 450 climbed blocks); it is *cosmetic* by the invariant — positions stay
   consistent. Old SkyWindow's equivalent moment was the rubber-band; this one leaves no correction.
-- **Command coordinates: the full vanilla grammar is rewritten** (see `rewrite-vanilla-commands`),
-  including multi-triple commands (`fill`/`clone`) and recursive `execute ... run` chains, and the
-  same rewrite covers command blocks (`SetCommandBlock`/command-minecart text) and the
-  command-block editor display (block-entity `Command` NBT). Two real limits remain, both
-  structural: **custom plugin commands** with positions need `command-position-schemas` (or
-  `rewrite-commands`) to be taught, and **signed chat commands** (`enforce-secure-profile`) can
-  never be touched (their signature covers the text). Relative coordinates (`~ ~ ~`) work
-  everywhere by construction - the server resolves them against its own (real-space) position.
+- **Command coordinates: any command, any plugin, no configuration.** SkyWindow indexes the
+  Brigadier command tree the server sends at join and shifts exactly the tokens the *server itself*
+  would read as coordinates - the full vanilla grammar (`fill`/`clone` multi-triples, recursive
+  `execute ... run`, `facing <pos>`, `spreadplayers ... under`) and every plugin command are covered
+  by the same mechanism; command blocks (`SetCommandBlock`/command-minecart text) and the
+  command-block editor display (block-entity `Command` NBT) go through it too. What remains is
+  structural: **signed chat commands** (`enforce-secure-profile`) can never be touched (their
+  signature covers the text), and the exotic case of a plugin carrying coordinates in an argument
+  it does not type as a coordinate (e.g. one opaque `"x,y,z"` token) may need
+  `command-position-schemas`. Relative coordinates (`~ ~ ~`) work everywhere by construction - the
+  server resolves them against its own (real-space) position.
 - **Piston animation and block-place sounds** on the Spigot platform are emitted by Geyser's own
   platform listeners with *real* coordinates; for windowed players that can make a piston at the
   world floor briefly ghost into a high player's view (or a place-sound not be heard at the top).

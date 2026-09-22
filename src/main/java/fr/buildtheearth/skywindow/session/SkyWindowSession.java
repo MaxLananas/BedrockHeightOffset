@@ -134,6 +134,8 @@ public final class SkyWindowSession {
     /** The downstream channel once attached; used to detach cleanly on disable/reload. */
     public volatile io.netty.channel.Channel channel;
     public volatile WindowConfig window;
+    /** Server command tree index (rebuilt whenever the server re-sends its Brigadier tree). */
+    public volatile fr.buildtheearth.skywindow.translate.CommandTreeIndex commandTree;
     /**
      * True when the cached window snapshot may predate Geyser's own dimension setup:
      * {@code ChunkUtils.loadDimension} runs in the login/respawn TRANSLATORS, i.e. strictly after
