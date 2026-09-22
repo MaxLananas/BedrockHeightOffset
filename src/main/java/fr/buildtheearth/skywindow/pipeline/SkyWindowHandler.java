@@ -120,6 +120,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         state.frame = SkyWindowSession.FrameState.INITIAL;
         held.clearAndComplete(); // never leave Geyser's write futures hanging
         state.resetChunkCache();
+        state.ghostRevertPositions.clear();
     }
 
     // ---------------------------------------------------------------- inbound
@@ -539,6 +540,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
      * unfreeze through the frame-resolution rules in {@link #flushHeld}.
      */
     private void performSwitch() {
+        boolean snapped = false;
         try {
             state.switchQueued.set(false);
             SkyWindowSession.FrameState frame = state.frame;
@@ -579,6 +581,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                 inject(windowed.packet());
             }
             injectPlayerSnap(realY, target);
+            snapped = true;
 
             if (config.logSwitches) {
                 logger.info("[SkyWindow] " + core.safeName(session.bedrockUsername()) + ": height window "
@@ -607,7 +610,11 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                 flushHeld();
             }
         } catch (Throwable t) {
-            state.unfreezeFrame();
+            if (snapped) {
+                state.unfreezeFrame(); // the snap landed: the client already lives in the new frame
+            } else {
+                rollbackSwitch(); // pre-snap: the client provably never left the previous frame
+            }
             revertDestroyedGhosts();
             flushHeld();
             logger.error("[SkyWindow] window switch failed; staying in current window", t);
@@ -659,6 +666,21 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
      * authoritative block back into Geyser so the client does not keep a locally-broken ghost.
      * Stored positions are REAL space; they are re-projected into the client's current frame here.
      */
+    /**
+     * Deterministic unwind of a switch that failed before its snap teleport landed: the client is
+     * provably still in {@code frozenFrameOffset}'s frame, so the pipeline returns there with it
+     * (the re-windowed chunks are re-projected again by the next switch). After the snap, the only
+     * correct unwind is {@link SkyWindowSession#unfreezeFrame} at the new offset.
+     */
+    private void rollbackSwitch() {
+        SkyWindowSession.FrameState f = state.frame;
+        if (f.frozen()) {
+            // Only the flipped-but-unsnapped state needs unwinding; a failure before the flip left
+            // the frame untouched and it must stay exactly as it was.
+            state.frame = new SkyWindowSession.FrameState(f.frozenFrameOffset(), false, f.frozenFrameOffset());
+        }
+    }
+
     private void revertDestroyedGhosts() {
         if (state.ghostRevertPositions.isEmpty()) {
             return;
@@ -668,10 +690,14 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             Vector3i windowPos = Vector3i.from(realPos.getX(), realPos.getY() - offset, realPos.getZ());
             int blockId;
             try {
-                // The read goes through the (session-aware, shifted) world manager with the window
-                // position and comes back as the same real block; the re-send is injected past our
-                // own transform so the client gets the right block at the position it sees.
-                blockId = session.getGeyser().getWorldManager().getBlockAt(session, windowPos.getX(), windowPos.getY(), windowPos.getZ());
+                // Read REAL space through the unwrapped platform manager: correct whether or not
+                // the shifted world-manager wrap is installed (the re-send is injected past our own
+                // transform, so the client gets the right block at the position it sees).
+                org.geysermc.geyser.level.WorldManager wm = session.getGeyser().getWorldManager();
+                if (wm instanceof fr.buildtheearth.skywindow.world.ShiftedWorldManager swm) {
+                    wm = swm.delegate();
+                }
+                blockId = wm.getBlockAt(session, realPos.getX(), realPos.getY(), realPos.getZ());
             } catch (Throwable t) {
                 continue;
             }

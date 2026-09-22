@@ -6,7 +6,6 @@ import org.geysermc.geyser.api.event.bedrock.SessionInitializeEvent;
 import org.geysermc.geyser.api.event.bedrock.SessionJoinEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserPostInitializeEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserPostReloadEvent;
-import org.geysermc.geyser.api.event.lifecycle.GeyserPreReloadEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserShutdownEvent;
 import org.geysermc.geyser.api.extension.Extension;
 
@@ -43,13 +42,6 @@ public final class SkyWindowExtension implements Extension {
     @Subscribe
     public void onPostReload(GeyserPostReloadEvent event) {
         // Covers "enabled mid-session via /geyser extensions" and re-enable after a reload.
-        core.reload();
-    }
-
-    @Subscribe
-    public void onPreReload(GeyserPreReloadEvent event) {
-        // Re-read config and apply live: handlers consult this core per packet, so no reconnect is
-        // needed to pick up new margins or timeouts. Disabling detaches everything cleanly.
         core.reload();
     }
 

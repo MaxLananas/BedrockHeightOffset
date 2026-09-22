@@ -74,3 +74,23 @@ after treatment in the second table.
 | L1 | **Fixed** — orphan comments/javadoc purged. |
 | L2/L3/L4/L6/L7 | **Kept with reasons** (table above). |
 | L5 | **Fixed** — anomaly now produces one rare warning line (real integrity signal) instead of dead counters. |
+
+
+## Second pass (same protocol, on the treated tree)
+
+The tree above was re-audited with the identical adversarial protocol before any further change;
+new findings below, classified and treated the same way.
+
+| ID | Finding | Disposition |
+|----|---------|-------------|
+| S1 (CRITICAL) | `unfreezeFrame()` kept `f.offset()` (the switch target) on a mid-switch failure, while the client provably never left `frozenFrameOffset`'s frame (the snap had not landed). The next `performSwitch` then early-returns (`target == previous`) and the session stays mis-translated until another boundary crossing - and the "staying in current window" log was false. | **Fixed** - `snapped` flag: before the snap, `rollbackSwitch()` restores `FrameState(frozenFrameOffset, false, frozenFrameOffset)`; after the snap, `unfreezeFrame()` at the new offset is correct and unchanged. |
+| S2 (HIGH) | Orphan-session sweeper started even while disabled and its `ScheduledFuture` was never retained or cancelled: one zombie periodic task per process after `/geyser extensions disable` (or on a disabled install). | **Fixed** - future retained, `cancelSweeper()` on stop/disable, started only when running, idempotent across enable cycles. |
+| S3 (HIGH) | `installShiftedWorldManager` trusted its `worldManagerShifted` flag: if a Geyser reload swapped the live `WorldManager`, the wrap was silently absent while every ghost/collision read assumed it. | **Fixed** - verify, never trust: the live manager is instance-checked every time; a swapped manager clears the stale reflection handles and re-wraps. |
+| S4 (MEDIUM) | `onPreReload` + `onPostReload` both called `core.reload()` (double config load + double install per `/geyser reload`). | **Fixed** - `onPreReload` deleted; `onPostReload` alone is the single reload point (with S3 the re-wrap is verified, not assumed). |
+| S5 (MEDIUM) | `revertDestroyedGhosts` read blocks through the (shifted) `WorldManager` at window coordinates: silently wrong blocks when the wrap failed (S3's failure mode). | **Fixed** - read REAL space through the unwrapped delegate; correct in both wrap states. |
+| S6 (CLEANUP) | `handlerRemoved` left `ghostRevertPositions` populated across a pipeline rebuild on a surviving state. | **Fixed** - cleared alongside the held queue and chunk cache. |
+
+Deletion pass re-run on the treated tree (protocol step 27): nothing further was found deletable
+without losing a pinned guarantee - the survivors of the table above (L2/L3/L4/L6/L7 dispositions,
+`FrameState`, `evictions`+`cacheEvictionWarned`, `unfreezeFrame`) each have a live reader and a
+documented reason.

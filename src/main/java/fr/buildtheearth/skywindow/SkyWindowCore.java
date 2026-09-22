@@ -34,6 +34,8 @@ public final class SkyWindowCore {
     private volatile fr.buildtheearth.skywindow.translate.CommandYRewrite.Config commandConfig =
         deriveCommandConfig(SkyWindowConfig.loadDefault());
     private volatile boolean worldManagerShifted;
+    /** Orphan-session sweeper; cancelled on stop/disable so no task outlives the feature. */
+    private volatile java.util.concurrent.ScheduledFuture<?> sweeper;
     private volatile boolean running;
     /** Saved reflection handles for whatever we replaced, for clean restore. */
     private volatile Field worldManagerField;
@@ -48,11 +50,11 @@ public final class SkyWindowCore {
     public void start() {
         loadConfig();
         running = config.enabled;
-        startSweeper();
         if (!running) {
             extension.logger().info("[SkyWindow] disabled by configuration");
             return;
         }
+        startSweeper();
         installShiftedWorldManager();
         extension.logger().info("[SkyWindow] windowed height support active - players are translated into"
             + " the client's own Y range; see README for the exact limits and guarantees");
@@ -82,8 +84,10 @@ public final class SkyWindowCore {
         loadConfig();
         running = config.enabled;
         if (running) {
+            startSweeper();
             installShiftedWorldManager();
         } else {
+            cancelSweeper();
             detachAll();
             unwrapWorldManager();
         }
@@ -91,6 +95,7 @@ public final class SkyWindowCore {
 
     public void stop() {
         running = false;
+        cancelSweeper();
         detachAll();
         unwrapWorldManager();
     }
@@ -106,8 +111,9 @@ public final class SkyWindowCore {
      * the map bounded regardless of event-path gaps.
      */
     private void startSweeper() {
+        cancelSweeper(); // idempotent across enable cycles
         try {
-            GeyserImpl.getInstance().getScheduledThread().scheduleWithFixedDelay(() -> {
+            sweeper = GeyserImpl.getInstance().getScheduledThread().scheduleWithFixedDelay(() -> {
                 try {
                     for (Map.Entry<GeyserSession, SkyWindowSession> e : states.entrySet()) {
                         if (e.getKey().isClosed()) {
@@ -123,6 +129,14 @@ public final class SkyWindowCore {
             }, 60, 60, java.util.concurrent.TimeUnit.SECONDS);
         } catch (Throwable ignored) {
             // executor unavailable: states still cleaned by the disconnect event path
+        }
+    }
+
+    private void cancelSweeper() {
+        var s = sweeper;
+        sweeper = null;
+        if (s != null) {
+            s.cancel(false);
         }
     }
 
@@ -323,9 +337,6 @@ public final class SkyWindowCore {
      * corrections) may still disagree - the startup log says so explicitly.
      */
     private void installShiftedWorldManager() {
-        if (worldManagerShifted) {
-            return; // already wrapped by a previous enable cycle (enabled -> reload -> still enabled)
-        }
         try {
             Object bootstrap = GeyserImpl.getInstance().getBootstrap();
             if (!(bootstrap instanceof GeyserBootstrap geyserBootstrap)) {
@@ -333,9 +344,16 @@ public final class SkyWindowCore {
             }
             WorldManager current = geyserBootstrap.getWorldManager();
             if (current instanceof ShiftedWorldManager) {
-                // Already wrapped (e.g. by a previous load that did not unwrap): treat as success.
                 worldManagerShifted = true;
-                return;
+                return; // already wrapped by a previous enable cycle
+            }
+            if (worldManagerShifted) {
+                // The flag says wrapped but the live manager is not ours (Geyser's reload swapped it
+                // under us): drop the stale reflection handles and re-wrap the new manager below.
+                worldManagerField = null;
+                originalWorldManager = null;
+                bootstrapField = null;
+                originalBootstrap = null;
             }
             ShiftedWorldManager wrapper = new ShiftedWorldManager(current, this);
             String strategy = tryFieldSwap(bootstrap, wrapper)
