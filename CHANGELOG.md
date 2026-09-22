@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.0 (unreleased)
+## 1.3.0
 
 - Universal command oracle on **Mojang Brigadier**: the wire command tree is rebuilt into real Brigadier nodes (vendored MIT sources, package-relocated to `fr.buildtheearth.skywindow.brigadier`, see `THIRD-PARTY-NOTICES.md`) and parsed with Minecraft's own parser - literal-exact matching, argument fallback with backtracking, redirect aliases, and Y character ranges straight from the parse. The 1.2.0 structural walker remains as fallback engine; the grammar heuristics remain the last resort. Pinned contracts are unchanged.
 - **In-game dev commands removed**: `/skywindow audit|map|reveal|preview` are gone - the extension is fully invisible and zero-config.
