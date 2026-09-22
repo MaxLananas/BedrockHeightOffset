@@ -50,10 +50,11 @@ public final class FuzzTest {
         Random random = new Random(SEED);
         int nonNullRewrites = 0;
         for (int i = 0; i < 65_536; i++) {
-            String input = randomCommand(random);
-            if (random.nextInt(8) == 0) {
-                input = input + " " + "x".repeat(520); // exercise the pinned length cap
-            }
+            // sometimes deliberately oversized to exercise the pinned 512 length cap;
+            // single assignment so the value stays effectively final for the lambda below
+            String input = random.nextInt(8) == 0
+                ? randomCommand(random) + " " + "x".repeat(520)
+                : randomCommand(random);
             int offset = OFFSETS[random.nextInt(OFFSETS.length)];
             CommandYRewrite.Config config = random.nextBoolean()
                 ? CFG
