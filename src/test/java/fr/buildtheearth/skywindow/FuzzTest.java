@@ -111,12 +111,18 @@ public final class FuzzTest {
             List<CommandYRewrite.Token> tokens = CommandYRewrite.tokenizeWithOffsets(input);
             List<String> plain = CommandYRewrite.tokenize(input);
             assertEquals(plain.size(), tokens.size(), "token count mismatch");
+            // every token must be the exact slice of the input at its offset
             for (int j = 0; j < tokens.size(); j++) {
                 assertEquals(plain.get(j), tokens.get(j).text(), "token text mismatch");
-                String protectedText = tokens.get(j).text().replace(' ', '\0');
-                String slice = input.substring(tokens.get(j).start(),
-                    tokens.get(j).start() + protectedText.length());
-                assertEquals(protectedText, slice, "offset mismatch");
+                int start = tokens.get(j).start();
+                String text = tokens.get(j).text();
+                // tokens are contiguous segments separated by single unprotected spaces;
+                // re-derive the segment end from the next token start (or the input end)
+                int end = (j + 1 < tokens.size())
+                    ? tokens.get(j + 1).start() - 1
+                    : input.length();
+                String slice = input.substring(start, Math.min(end, input.length()));
+                assertEquals(text, slice, "offset slice mismatch for [" + input + "]");
             }
         }
     }
