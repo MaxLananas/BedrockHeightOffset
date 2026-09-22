@@ -64,7 +64,7 @@ import java.util.concurrent.TimeUnit;
  * <p>The freeze protocol and its frame-resolution rules for held packets are documented in
  * docs/ARCHITECTURE.md ("Window switching") - the short version: packets a client sent while it still
  * lived in the previous frame must be translated with the PREVIOUS offset; the switch therefore
- * remembers {@code frozenFrameOffset} and held block-position packets are only replayed when their
+ * remembers the frozen {@code FrameState} and held block-position packets are only replayed when their
  * position is physically plausible (within reach of the player's real position) under that frame,
  * then the new one, and are dropped with an authoritative revert if neither fits.</p>
  */
@@ -100,9 +100,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         this.state = java.util.Objects.requireNonNull(state);
         this.core = java.util.Objects.requireNonNull(core);
         this.logger = java.util.Objects.requireNonNull(logger);
-        // Built here, not in the field initializer: the overflow lambda must capture a fully
-        // assigned `state` (the compiler is right to reject a forward reference in an initializer).
-        this.held = new HeldQueue(HELD_QUEUE_LIMIT, state.heldOverflow::increment);
+        this.held = new HeldQueue(HELD_QUEUE_LIMIT);
     }
 
     @Override
@@ -110,7 +108,6 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         this.ctx = ctx;
         state.channel = ctx.channel();
         state.attached = true;
-        state.degraded = false;
         // If the login phase already passed while attach() was still retrying, pick up the dimension
         // bounds now; the switch monitor does the rest.
         refreshWindowAndMaybeEvaluate();
@@ -120,8 +117,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
     public void handlerRemoved(ChannelHandlerContext ctx) {
         state.attached = false;
         state.channel = null;
-        state.offset = 0;
-        state.frozen = false;
+        state.frame = SkyWindowSession.FrameState.INITIAL;
         held.clearAndComplete(); // never leave Geyser's write futures hanging
         state.resetChunkCache();
     }
@@ -159,18 +155,12 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             state.windowDirty = true;
             refreshWindowAndMaybeEvaluate();
             // Falls through to the generic transform: PlayerSpawnInfo.lastDeathPos is absolute Y.
-            int offset = state.offset;
+            int offset = state.frame.offset();
             if (offset == 0 || !appliesToPlayer()) {
                 ctx.fireChannelRead(login);
                 return;
             }
             Object translated = InboundYTransforms.apply(login, offset, core.commandConfig());
-            if (translated != login) {
-                state.inTranslated.increment();
-                if (state.watch) {
-                    watch("IN", "Login", "y-" + offset + " (death pos)");
-                }
-            }
             ctx.fireChannelRead(translated);
             return;
         }
@@ -180,18 +170,12 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             state.worldGeneration++;
             state.windowDirty = true;
             refreshWindowAndMaybeEvaluate();
-            int offset = state.offset;
+            int offset = state.frame.offset();
             if (offset == 0 || !appliesToPlayer()) {
                 ctx.fireChannelRead(respawn);
                 return;
             }
-                Object translated = InboundYTransforms.apply(respawn, offset, core.commandConfig());
-            if (translated != respawn) {
-                state.inTranslated.increment();
-                if (state.watch) {
-                    watch("IN", "Respawn", "y-" + offset + " (death pos)");
-                }
-            }
+            Object translated = InboundYTransforms.apply(respawn, offset, core.commandConfig());
             ctx.fireChannelRead(translated);
             return;
         }
@@ -208,18 +192,21 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             boolean applies = w != null && w.needed();
             if (applies) {
                 state.chunkCache.put(chunk);
+                if (state.chunkCache.evictions > 0 && !state.cacheEvictionWarned) {
+                    state.cacheEvictionWarned = true;
+                    logger.warning("[SkyWindow] " + core.safeName(session.bedrockUsername())
+                        + ": replay cache is evicting chunks the client still holds (view distance beyond"
+                        + " chunk-cache-max-chunks/-megabytes); height switches can then leave stale-frame"
+                        + " chunks behind. Raise the chunk-cache limits to keep the exact guarantee.");
+                }
             }
-            int offset = state.offset;
+            int offset = state.frame.offset();
             if (offset != 0 && applies) {
                 WindowedChunks.Outcome windowed = WindowedChunks.window(chunk, w.chunkParams(offset));
                 if (windowed.anomaly()) {
-                    state.chunkAnomalies.increment();
-                } else {
-                    state.chunkWindowed.increment();
-                }
-                if (state.watch) {
-                    watch("IN", "LevelChunkWithLight", "resliced by " + offset
-                        + (windowed.anomaly() ? " (normalized)" : ""));
+                    logger.warning("[SkyWindow] " + core.safeName(session.bedrockUsername())
+                        + ": chunk " + chunk.getX() + "," + chunk.getZ()
+                        + " payload normalized (malformed source section)");
                 }
                 ctx.fireChannelRead(windowed.packet());
                 return;
@@ -259,7 +246,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             }
         }
 
-        int offset = state.offset;
+        int offset = state.frame.offset();
         if (offset == 0 || !appliesToPlayer()) {
             ctx.fireChannelRead(packet);
             return;
@@ -270,23 +257,17 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             // text this player is actually editing (SuggestionRanges is the exact token mapping).
             translated = state.suggestionJournal.mapBack(suggestions);
         }
-        if (translated != packet) {
-            state.inTranslated.increment();
-            if (state.watch) {
-                watch("IN", shortName(packet), "y-" + offset);
-            }
-        }
         ctx.fireChannelRead(translated);
     }
 
     /** Real Y of a client-side/server-side position field, relative flags respected. */
     private double realYOf(double packetY, boolean relativeY) {
         if (!relativeY) {
-            return packetY + state.offset;
+            return packetY + state.frame.offset();
         }
         double currentReal = state.lastSeenRealY;
         if (currentReal == 0 && session.getPlayerEntity() != null) {
-            currentReal = session.getPlayerEntity().position().getY() + state.offset;
+            currentReal = session.getPlayerEntity().position().getY() + state.frame.offset();
         }
         return currentReal + packetY;
     }
@@ -320,11 +301,14 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             return;
         }
         try {
-            int offset = state.offset;
-            if (state.frozen) {
-                handleFrozenWrite(ctx, packet, promise, offset);
+            // One atomic frame snapshot per packet: offset and the freeze flag must never be read as
+            // separate volatiles (torn pair = translation with a foreign frame, EXTREME-AUDIT CR1).
+            SkyWindowSession.FrameState frame = state.frame;
+            if (frame.frozen()) {
+                handleFrozenWrite(ctx, packet, promise, frame);
                 return;
             }
+            int offset = frame.offset();
             // Movement is the hottest outbound packet type by an order of magnitude (20-30/s per
             // player). Handle it fully inline: one type check total, and the switch evaluation reuses
             // the exact sum used for translation.
@@ -338,12 +322,6 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             }
             if (offset != 0 && appliesToPlayer()) {
                 Object translated = OutboundYTransforms.apply(packet, offset, core.commandConfig(), state.commandTree);
-                if (translated != packet) {
-                    state.outTranslated.increment();
-                    if (state.watch) {
-                        watch("OUT", shortName(packet), "y+" + offset);
-                    }
-                }
                 translated = trackSuggestion(packet, translated);
                 ctx.write(translated, promise);
                 return;
@@ -372,10 +350,6 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         Object translated = withRotation
             ? ((ServerboundMovePlayerPosRotPacket) packet).withY(realY)
             : ((ServerboundMovePlayerPosPacket) packet).withY(realY);
-        state.outTranslated.increment();
-        if (state.watch) {
-            watch("OUT", withRotation ? "MovePlayerPosRot" : "MovePlayerPos", "y+" + offset);
-        }
         ctx.write(translated, promise);
     }
 
@@ -389,7 +363,8 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
      * commands in the sender's frame. Anything unresolvable or overflowing the queue falls back to
      * the drop path with an authoritative ghost revert for dig/place.
      */
-    private void handleFrozenWrite(ChannelHandlerContext ctx, MinecraftPacket packet, ChannelPromise promise, int offset) {
+    private void handleFrozenWrite(ChannelHandlerContext ctx, MinecraftPacket packet, ChannelPromise promise,
+                                   SkyWindowSession.FrameState frame) {
         if (!OutboundYTransforms.isPositionBearing(packet)) {
             // Truly Y-free (rotations, swings, container clicks, accept-teleport, ...): forward raw.
             ctx.write(packet, promise);
@@ -401,18 +376,13 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         boolean hold = (blockPositioned && core.config().freezeHoldActions)
             || (movementLike && core.config().freezeHoldMovement)
             || OutboundYTransforms.isCommandPacket(packet);
-        state.lastSeenRealY = clientFrameRealY(packet, state.frozenFrameOffset, state.lastSeenRealY);
+        state.lastSeenRealY = clientFrameRealY(packet, frame.frozenFrameOffset(), state.lastSeenRealY);
         if (hold && held.offer(new HeldQueue.Entry(packet, promise, blockPositioned))) {
-            state.actionsHeld.increment();
-            if (state.watch) {
-                watch("OUT", shortName(packet), "held across switch");
-            }
             return;
         }
         if (blockPositioned) {
-            recordGhost(packet);
+            recordGhost(packet, frame.frozenFrameOffset());
         }
-        state.droppedWhileFrozen.increment();
         promise.trySuccess();
     }
 
@@ -422,15 +392,15 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
      * (the frame the packet was sent in, resolved now) so the unfreeze re-send survives any offset
      * bookkeeping in between. Capped; best-effort cosmetics only.
      */
-    private void recordGhost(MinecraftPacket packet) {
+    private void recordGhost(MinecraftPacket packet, int frameOffset) {
         if (packet instanceof ServerboundPlayerActionPacket action
             && (action.getAction() == PlayerAction.START_DIGGING
                 || action.getAction() == PlayerAction.FINISH_DIGGING
                 || action.getAction() == PlayerAction.CANCEL_DIGGING)) {
-            addGhost(action.getPosition(), state.frozenFrameOffset);
+            addGhost(action.getPosition(), frameOffset);
         } else if (packet instanceof ServerboundUseItemOnPacket use) {
-            addGhost(use.getPosition(), state.frozenFrameOffset);
-            addGhost(faceTarget(use.getPosition(), use.getFace()), state.frozenFrameOffset);
+            addGhost(use.getPosition(), frameOffset);
+            addGhost(faceTarget(use.getPosition(), use.getFace()), frameOffset);
         }
     }
 
@@ -464,8 +434,9 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
 
     private void flushHeld() {
         ChannelHandlerContext self = ctx;
-        int offsetNow = state.offset;
-        int frozenFrame = state.frozenFrameOffset;
+        SkyWindowSession.FrameState frame = state.frame;
+        int offsetNow = frame.offset();
+        int frozenFrame = frame.frozenFrameOffset();
         double playerRealY = state.lastSeenRealY;
         HeldQueue.Entry entry;
         while ((entry = held.poll()) != null) {
@@ -489,8 +460,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                             if (plausible(newFrame, playerRealY)) {
                                 out = newFrame; // sent after the snap: current frame
                             } else {
-                                state.droppedWhileFrozen.increment();
-                                recordGhost(packet);
+                                recordGhost(packet, frozenFrame);
                                 entry.promise().trySuccess();
                                 continue; // unresolvable frame: drop, never guess
                             }
@@ -529,11 +499,12 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         if (!core.running()) {
             return;
         }
+        SkyWindowSession.FrameState frame = state.frame;
         SkyWindowSession.WindowConfig w = state.window;
-        if (w == null || !w.needed() || state.frozen) {
+        if (w == null || !w.needed() || frame.frozen()) {
             return;
         }
-        int current = state.offset;
+        int current = frame.offset();
         SkyWindowConfig config = core.config();
         if (!WindowRules.shouldSwitch(realY, current, w.clientMinY(), w.clientHeight(),
             config.switchMarginBlocks, w.maxOffset())) {
@@ -570,31 +541,27 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
     private void performSwitch() {
         try {
             state.switchQueued.set(false);
+            SkyWindowSession.FrameState frame = state.frame;
             SkyWindowSession.WindowConfig w = state.window;
             ChannelHandlerContext self = ctx;
-            if (w == null || !w.needed() || state.frozen || self == null || !self.channel().isActive()
+            if (w == null || !w.needed() || frame.frozen() || self == null || !self.channel().isActive()
                 || !core.running()) {
                 return;
             }
             if (session.getPlayerEntity() == null || !session.isSpawned()) {
                 return;
             }
-            double realY = session.getPlayerEntity().position().getY() + state.offset;
-            if (state.forcedRealY >= 0) {
-                realY = state.forcedRealY;
-                state.forcedRealY = -1;
-            }
+            double realY = session.getPlayerEntity().position().getY() + frame.offset();
             SkyWindowConfig config = core.config();
             int target = WindowRules.targetOffset(realY, w.clientMinY(), w.clientHeight(), w.maxOffset());
-            int previous = state.offset;
+            int previous = frame.offset();
             if (target == previous) {
                 return;
             }
             long sinceLast = System.currentTimeMillis() - state.lastSwitchAtMs;
             state.switchBackoff = sinceLast < config.switchCooldownMs * 4 ? Math.min(8, state.switchBackoff * 2) : 1;
-            state.frozen = true;
-            state.frozenFrameOffset = previous;
-            state.offset = target;
+            // One atomic frame flip: readers see either the whole old frame or the whole new one.
+            state.frame = new SkyWindowSession.FrameState(target, true, previous);
             state.lastSwitchAtMs = System.currentTimeMillis();
             state.lastSeenRealY = realY;
             long worldGen = state.worldGeneration;
@@ -605,15 +572,14 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             for (var chunk : state.chunkCache.nearestFirst((int) playerPos.getX(), (int) playerPos.getZ())) {
                 WindowedChunks.Outcome windowed = WindowedChunks.window(chunk, w.chunkParams(target));
                 if (windowed.anomaly()) {
-                    state.chunkAnomalies.increment();
-                } else {
-                    state.chunkReplays.increment();
+                    logger.warning("[SkyWindow] " + core.safeName(session.bedrockUsername())
+                        + ": chunk " + chunk.getX() + "," + chunk.getZ()
+                        + " payload normalized during replay (malformed source section)");
                 }
                 inject(windowed.packet());
             }
             injectPlayerSnap(realY, target);
 
-            state.windowSwitches.increment();
             if (config.logSwitches) {
                 logger.info("[SkyWindow] " + core.safeName(session.bedrockUsername()) + ": height window "
                     + previous + " -> " + target + " (player real Y " + (int) realY + ")");
@@ -621,91 +587,31 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             if (config.announceSwitches) {
                 announceSwitch(previous, target);
             }
-            long freezeStart = System.nanoTime();
             try {
                 self.channel().eventLoop().schedule(() -> {
-                    state.lastFreezeNanos = System.nanoTime() - freezeStart;
-                    state.freezeTotalNanos.add(state.lastFreezeNanos);
-                    state.freezeCount.increment();
                     if (!self.channel().isActive() || state.worldGeneration != worldGen) {
                         // Player left or the world replaced everything the ghosts/held entries refer to.
                         held.clearAndComplete();
                         state.ghostRevertPositions.clear();
-                        state.frozen = false;
+                        state.unfreezeFrame();
                         return;
                     }
-                    state.frozen = false;
+                    state.unfreezeFrame();
                     revertDestroyedGhosts();
                     flushHeld();
-                    if (state.forcedRealY >= 0) {
-                        // /skywindow window arrived during the freeze: run it now through the normal
-                        // machinery rather than leaving the operator hanging.
-                        performSwitch();
-                    }
                 }, config.freezeMs, TimeUnit.MILLISECONDS);
             } catch (Throwable schedulingFailed) {
                 // Executor shutting down: unwind the freeze inline so the player is never stranded.
-                state.frozen = false;
+                state.unfreezeFrame();
                 revertDestroyedGhosts();
                 flushHeld();
             }
         } catch (Throwable t) {
-            state.frozen = false;
+            state.unfreezeFrame();
             revertDestroyedGhosts();
             flushHeld();
             logger.error("[SkyWindow] window switch failed; staying in current window", t);
         }
-    }
-
-    /**
-     * Operator-initiated exact-window move ({@code /skywindow window <realY>}): same machinery, given
-     * target. Unlike 3.x-era forcing this never assigns an offset behind the pipeline's back - it goes
-     * through {@link #performSwitch} (freeze, replay, snap, backoff, derived cap). A request arriving
-     * mid-freeze waits for the freeze to unwind; one arriving inside the backoff window is scheduled
-     * at its expiry, so spamming the command throttles like automatic switching.
-     */
-    public void forceWindow(double realY) {
-        ChannelHandlerContext self = ctx;
-        if (self == null) {
-            return;
-        }
-        state.forcedRealY = realY;
-        try {
-            if (self.channel().eventLoop().inEventLoop()) {
-                performForcedSwitch();
-            } else {
-                self.channel().eventLoop().execute(this::performForcedSwitch);
-            }
-        } catch (Throwable ignored) {
-            // channel closing; the request simply does not land
-        }
-    }
-
-    /** Event-loop confined forced-switch entry: applies the same anti-storm throttle as automatic switches. */
-    private void performForcedSwitch() {
-        state.switchQueued.set(false); // any retry we scheduled owns the latch only until here
-        if (state.forcedRealY < 0 || state.frozen) {
-            return; // consumed elsewhere, or the freeze's unwinding will re-invoke us
-        }
-        ChannelHandlerContext self = ctx;
-        if (self == null || !self.channel().isActive()) {
-            return;
-        }
-        SkyWindowConfig config = core.config();
-        long cooldown = config.switchCooldownMs * Math.max(1, state.switchBackoff);
-        long sinceLast = System.currentTimeMillis() - state.lastSwitchAtMs;
-        if (sinceLast < cooldown) {
-            if (state.switchQueued.compareAndSet(false, true)) {
-                try {
-                    self.channel().eventLoop().schedule(this::performForcedSwitch, cooldown - sinceLast,
-                        TimeUnit.MILLISECONDS);
-                } catch (Throwable t) {
-                    state.switchQueued.set(false);
-                }
-            }
-            return;
-        }
-        performSwitch();
     }
 
     private void announceSwitch(int from, int to) {
@@ -746,9 +652,6 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                 session.getPlayerEntity().getYaw(), session.getPlayerEntity().getPitch(), List.of(), true);
         }
         inject(snap);
-        if (state.watch) {
-            watch("IN", "SnapTeleport", "clientY=" + (int) clientY);
-        }
     }
 
     /**
@@ -760,7 +663,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         if (state.ghostRevertPositions.isEmpty()) {
             return;
         }
-        int offset = state.offset;
+        int offset = state.frame.offset();
         for (Vector3i realPos : new java.util.ArrayList<>(state.ghostRevertPositions)) {
             Vector3i windowPos = Vector3i.from(realPos.getX(), realPos.getY() - offset, realPos.getZ());
             int blockId;
@@ -787,7 +690,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                     + w.clientMinY() + ".." + (w.clientMinY() + w.clientHeight()) + ") java[" + w.javaMinY()
                     + ".." + w.javaMaxY() + ") cap=" + w.maxOffset() + " needed=" + w.needed());
             }
-            evaluateSwitch(session.getPlayerEntity().position().getY() + state.offset);
+            evaluateSwitch(session.getPlayerEntity().position().getY() + state.frame.offset());
         }
     }
 
@@ -803,7 +706,6 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             quarantined = ConcurrentHashMap.newKeySet();
         }
         if (quarantined.add(packet.getClass())) {
-            core.reportQuarantinedType(packet.getClass().getSimpleName(), direction + ": " + t);
             if (!loggedTransformError) {
                 loggedTransformError = true;
                 logger.error("[SkyWindow] " + direction + " transform failed for "
@@ -812,21 +714,4 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
         }
     }
 
-    private void watch(String dir, String what, String note) {
-        if (state.watch) {
-            try {
-                state.pushWatchLine(dir + " " + what + " " + note + " (offset " + state.offset + ")");
-            } catch (Throwable ignored) {
-                // diagnostics never affect the packet path
-            }
-        }
-    }
-
-    private static String shortName(MinecraftPacket packet) {
-        String n = packet.getClass().getSimpleName();
-        if (n.endsWith("Packet")) {
-            n = n.substring(0, n.length() - 6);
-        }
-        return n.startsWith("Clientbound") ? n.substring(11) : n.startsWith("Serverbound") ? n.substring(11) : n;
-    }
 }

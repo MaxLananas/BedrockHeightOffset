@@ -6,23 +6,20 @@ import org.cloudburstmc.math.vector.Vector3i;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundTeleportEntityPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundLevelChunkWithLightPacket;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.LongAdder;
 
 /**
  * All mutable SkyWindow state for one Bedrock player. There deliberately is no global offset state: every
  * field belongs to a single GeyserSession and is discarded with it.
  *
- * <p>Thread model: {@code offset}, {@code frozen} and {@code window} are written on the channel event
- * loop and read from the Geyser tick loop (outbound writes), hence volatile. The chunk cache, watch
- * ring and teleport snapshot are event-loop-confined. The whole window switch executes as one
+ * <p>Thread model: {@code frame} and {@code window} are written on the channel event
+ * loop and read from the Geyser tick loop (outbound writes), hence volatile. The chunk cache and
+ * teleport snapshot are event-loop-confined. The whole window switch executes as one
  * event-loop task, which is what makes the offset flip atomic with respect to packet translation.</p>
  */
 public final class SkyWindowSession {
@@ -65,6 +62,8 @@ public final class SkyWindowSession {
         private final int maxChunks;
         private final long maxBytes;
         private long bytes;
+        /** Lifetime count of LRU evictions (the evicted chunk may still be loaded at the client). */
+        public int evictions;
 
         public ChunkCache(int maxChunks, long maxBytes) {
             this.maxChunks = maxChunks;
@@ -119,6 +118,7 @@ public final class SkyWindowSession {
                     byKey.entrySet().iterator().next();
                 byKey.remove(eldest.getKey());
                 bytes -= estimatedSize(eldest.getValue());
+                evictions++;
             }
         }
 
@@ -126,8 +126,6 @@ public final class SkyWindowSession {
             return ((long) x << 32) ^ (z & 0xFFFFFFFFL);
         }
     }
-
-    private static final int WATCH_RING_LIMIT = 192;
 
     private final WindowConfigSource windowConfigSource;
 
@@ -146,14 +144,23 @@ public final class SkyWindowSession {
      * (which cannot arrive before the dimension is set), never on the stale snapshot itself.
      */
     public volatile boolean windowDirty = true;
-    public volatile int offset;
     public volatile boolean attached;
-    public volatile boolean frozen;
     public volatile long lastSwitchAtMs;
-    public volatile boolean watch;
+    /**
+     * The frame triple every packet must read coherently: wire offset, freeze flag, and the offset the
+     * frozen client frame was built with. One immutable snapshot behind one volatile reference - two
+     * separate volatiles tear under inter-thread stalls (docs/EXTREME-AUDIT.md CR1).
+     */
+    public record FrameState(int offset, boolean frozen, int frozenFrameOffset) {
+        public static final FrameState INITIAL = new FrameState(0, false, 0);
+    }
+
+    public volatile FrameState frame = FrameState.INITIAL;
 
     // Event-loop confined:
     public final ChunkCache chunkCache;
+    /** One-shot warning latch for replay-cache eviction of chunks the client still holds (audit CR3). */
+    public boolean cacheEvictionWarned;
     public ClientboundTeleportEntityPacket lastPlayerTeleport;
     public int playerJavaId = -1;
     /**
@@ -164,42 +171,25 @@ public final class SkyWindowSession {
      */
     public final java.util.Set<Vector3i> ghostRevertPositions =
         java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
-    private final Deque<String> watchRing = new ArrayDeque<>(WATCH_RING_LIMIT);
-
     public final AtomicBoolean switchQueued = new AtomicBoolean();
-    /** True after attach exhausted its retries: the session runs untranslated; surfaced in info/doctor. */
-    public volatile boolean degraded;
     /** Incremented on login/respawn; stale freeze artifacts (ghosts, held writes) check against it. */
     public volatile long worldGeneration;
-    /** Offset the client's frame was built with when the current freeze started. */
-    public volatile int frozenFrameOffset;
     /** The player's physical (real-space) Y from the last movement packet; frame-resolution basis. */
     public volatile double lastSeenRealY;
-    /** Forced target for /skywindow window <realY>; -1 = none. Consumed by the next performSwitch. */
-    public volatile double forcedRealY = -1;
     /** Cooldown multiplier (1..8) while switches keep arriving back-to-back (anti oscillation storm). */
     public volatile int switchBackoff = 1;
-    /** Last completed freeze duration, and running totals for the stats view. */
-    public volatile long lastFreezeNanos;
-    public final java.util.concurrent.atomic.LongAdder freezeTotalNanos = new java.util.concurrent.atomic.LongAdder();
-    public final java.util.concurrent.atomic.LongAdder freezeCount = new java.util.concurrent.atomic.LongAdder();
-    /** Baselines captured by /skywindow stats reset; displays show (sum - baseline). */
-    public final long[] statsBaseline = new long[16];
-    public final LongAdder inTranslated = new LongAdder();
-    public final LongAdder outTranslated = new LongAdder();
-    public final LongAdder chunkWindowed = new LongAdder();
-    public final LongAdder chunkReplays = new LongAdder();
-    public final LongAdder windowSwitches = new LongAdder();
-    public final LongAdder droppedWhileFrozen = new LongAdder();
-    public final LongAdder chunkAnomalies = new LongAdder();
-    public final LongAdder actionsHeld = new LongAdder();
-    public final LongAdder heldOverflow = new LongAdder();
-    /** Counter accessor index used by the reset baseline logic; keep in sync with the fields above. */
+    /** Cap on remembered ghost-revert targets (cosmetic best-effort, see EXTREME-AUDIT). */
     public static final int GHOST_REVERT_LIMIT = 8;
 
     public SkyWindowSession(WindowConfigSource windowConfigSource, int maxChunks, long maxBytes) {
         this.windowConfigSource = windowConfigSource;
         this.chunkCache = new ChunkCache(maxChunks, maxBytes);
+    }
+
+    /** Clears the freeze bit in place; safe from any unwind path, any number of times. */
+    public void unfreezeFrame() {
+        FrameState f = frame;
+        frame = new FrameState(f.offset(), false, f.offset());
     }
 
     public void refreshWindow() {
@@ -208,16 +198,5 @@ public final class SkyWindowSession {
 
     public void resetChunkCache() {
         chunkCache.clear();
-    }
-
-    public synchronized void pushWatchLine(String line) {
-        if (watchRing.size() >= WATCH_RING_LIMIT) {
-            watchRing.pollFirst();
-        }
-        watchRing.addLast(line);
-    }
-
-    public synchronized List<String> watchSnapshot() {
-        return new ArrayList<>(watchRing);
     }
 }

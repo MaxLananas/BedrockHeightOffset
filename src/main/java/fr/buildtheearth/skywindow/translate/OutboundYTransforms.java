@@ -114,7 +114,6 @@ public final class OutboundYTransforms {
         return null;
     }
 
-    /** @return the transformed packet, or {@code packet} itself when nothing changed */
     /** Same transform with the server's command tree as the shape oracle (see {@link CommandTreeIndex}). */
     public static Object apply(Object packet, int offset, CommandYRewrite.Config commands) {
         return apply(packet, offset, commands, null);

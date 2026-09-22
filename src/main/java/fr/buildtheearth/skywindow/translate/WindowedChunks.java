@@ -5,8 +5,6 @@ import fr.buildtheearth.skywindow.window.WindowRules;
 import org.geysermc.mcprotocollib.protocol.data.game.level.block.BlockEntityInfo;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundLevelChunkWithLightPacket;
 
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Rebuilds a {@code ClientboundLevelChunkWithLight} packet so that its contents appear at
@@ -61,16 +59,17 @@ public final class WindowedChunks {
         }
         int maxIndex = p.sectionCount();
         int javaMinSection = p.javaMinY() >> 4;
-        List<BlockEntityInfo> kept = new ArrayList<>(input.length);
+        BlockEntityInfo[] kept = new BlockEntityInfo[input.length];
+        int n = 0;
         for (BlockEntityInfo info : input) {
             int shiftedY = info.getY() - p.offset();
             int sectionIndex = (shiftedY >> 4) - javaMinSection;
             if (sectionIndex < 0 || sectionIndex >= maxIndex) {
                 continue;
             }
-            kept.add(withY(info, shiftedY));
+            kept[n++] = withY(info, shiftedY);
         }
-        return kept.toArray(new BlockEntityInfo[0]);
+        return n == input.length ? kept : java.util.Arrays.copyOf(kept, n);
     }
 
     private static BlockEntityInfo withY(BlockEntityInfo info, int y) {

@@ -4,7 +4,6 @@ import org.geysermc.event.subscribe.Subscribe;
 import org.geysermc.geyser.api.event.bedrock.SessionDisconnectEvent;
 import org.geysermc.geyser.api.event.bedrock.SessionInitializeEvent;
 import org.geysermc.geyser.api.event.bedrock.SessionJoinEvent;
-import org.geysermc.geyser.api.event.lifecycle.GeyserDefineCommandsEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserPostInitializeEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserPostReloadEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserPreReloadEvent;
@@ -72,9 +71,5 @@ public final class SkyWindowExtension implements Extension {
     @Subscribe
     public void onSessionDisconnect(SessionDisconnectEvent event) {
         core.onSessionDisconnected(event.connection());
-    }
-
-    @Subscribe
-    public void onDefineCommands(GeyserDefineCommandsEvent event) {
     }
 }

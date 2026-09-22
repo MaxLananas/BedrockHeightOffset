@@ -98,14 +98,20 @@ public final class CommandYRewrite {
         if (trimmed.isEmpty()) {
             return null;
         }
-        List<String> tokens = tokenize(trimmed);
+        // Tokenize exactly once per rewrite: the tree oracle consumes the same token/offset list
+        // (EXTREME-AUDIT H2 - this runs per command packet and per tab-completion keystroke).
+        List<Token> rawTokens = tokenizeWithOffsets(trimmed);
+        List<String> tokens = new ArrayList<>(rawTokens.size());
+        for (int i = 0; i < rawTokens.size(); i++) {
+            tokens.add(rawTokens.get(i).text());
+        }
         if (tokens.size() < 2) {
             return null;
         }
         boolean fromTree = false;
         BitSet ySlots;
         if (tree != null) {
-            BitSet treeSlots = tree.ySlots(trimmed);
+            BitSet treeSlots = tree.ySlots(trimmed, rawTokens);
             if (treeSlots != null) {
                 ySlots = treeSlots;
                 fromTree = true;

@@ -25,17 +25,14 @@ final class HeldQueue {
     private final Queue<Entry> queue = new ConcurrentLinkedQueue<>();
     private final AtomicInteger size = new AtomicInteger();
     private final int limit;
-    private final Runnable onOverflow;
 
-    HeldQueue(int limit, Runnable onOverflow) {
+    HeldQueue(int limit) {
         this.limit = limit;
-        this.onOverflow = onOverflow;
     }
 
     /** @return true when accepted; false means the caller must fall back to its drop behaviour. */
     boolean offer(Entry entry) {
         if (size.get() >= limit) {
-            onOverflow.run();
             return false;
         }
         queue.add(entry);

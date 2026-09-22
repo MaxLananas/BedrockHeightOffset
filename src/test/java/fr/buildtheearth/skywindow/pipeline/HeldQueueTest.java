@@ -24,16 +24,14 @@ class HeldQueueTest {
     }
 
     @Test
-    void offerUpToLimitThenRejectsWithOverflowCallback() {
+    void offerUpToLimitThenRejects() {
         EmbeddedChannel channel = new EmbeddedChannel();
-        AtomicInteger overflows = new AtomicInteger();
-        HeldQueue queue = new HeldQueue(4, overflows::incrementAndGet);
+        HeldQueue queue = new HeldQueue(4);
         for (int i = 0; i < 4; i++) {
             assertTrue(queue.offer(new HeldQueue.Entry("p" + i, new TestPromise(channel), false)), "offer " + i);
         }
         assertEquals(4, queue.size());
         assertFalse(queue.offer(new HeldQueue.Entry("over", new TestPromise(channel), false)));
-        assertEquals(1, overflows.get());
         assertEquals(4, queue.size()); // rejected entries are not inserted
         queue.clearAndComplete();
         assertEquals(0, queue.size());
@@ -42,7 +40,7 @@ class HeldQueueTest {
     @Test
     void fifoOrderIsPreserved() {
         EmbeddedChannel channel = new EmbeddedChannel();
-        HeldQueue queue = new HeldQueue(10, () -> { });
+        HeldQueue queue = new HeldQueue(10);
         for (int i = 0; i < 10; i++) {
             queue.offer(new HeldQueue.Entry("m" + i, new TestPromise(channel), i % 2 == 0));
         }
@@ -58,7 +56,7 @@ class HeldQueueTest {
     @Test
     void clearAndCompleteResolvesEveryPendingPromise() {
         EmbeddedChannel channel = new EmbeddedChannel();
-        HeldQueue queue = new HeldQueue(10, () -> { });
+        HeldQueue queue = new HeldQueue(10);
         ChannelPromise[] promises = new ChannelPromise[6];
         for (int i = 0; i < 6; i++) {
             promises[i] = new TestPromise(channel);
@@ -74,7 +72,7 @@ class HeldQueueTest {
     @Test
     void concurrentOfferAndDrainLosesNothing() throws Exception {
         EmbeddedChannel channel = new EmbeddedChannel();
-        HeldQueue queue = new HeldQueue(1_000_000, () -> { });
+        HeldQueue queue = new HeldQueue(1_000_000);
         int producers = 4;
         int perProducer = 25_000;
         AtomicInteger drained = new AtomicInteger();

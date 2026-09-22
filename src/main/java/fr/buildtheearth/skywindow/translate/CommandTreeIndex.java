@@ -75,8 +75,7 @@ public final class CommandTreeIndex {
      *     the tree cannot parse the message at all (typo, unknown command, cut text) - callers then
      *     fall back to the grammar heuristics.
      */
-    public BitSet ySlots(String body) {
-        List<CommandYRewrite.Token> tokens = CommandYRewrite.tokenizeWithOffsets(body);
+    public BitSet ySlots(String body, List<CommandYRewrite.Token> tokens) {
         BitSet parsed = dispatcher == null ? null : parseWith(body, tokens);
         return parsed != null ? parsed : walkerSlots(tokens);
     }

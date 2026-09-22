@@ -74,9 +74,8 @@ public final class SectionCodec {
      */
     public static Result resliceTolerant(byte[] in, int inSections, int shiftSections, int outSections) {
         int limit = Math.max(0, inSections);
-        // lengths[i] is the byte size of source section i; starts[i] its offset (0 = unparsed stops the walk).
+        // lengths[i] is the byte size of source section i (0 = unparsed stops the walk).
         int[] lengths = new int[limit];
-        int[] starts = new int[limit];
         int pos = 0;
         int parsed = 0;
         boolean anomaly = false;
@@ -88,7 +87,6 @@ public final class SectionCodec {
                 anomaly = true;
                 break;
             }
-            starts[i] = pos;
             lengths[i] = len;
             pos += len;
             parsed = i + 1;
@@ -104,12 +102,20 @@ public final class SectionCodec {
         }
         byte[] out = new byte[Math.max(0, outLen)];
         int outPos = 0;
+        // Sources are copied in ascending order (src = w + shift, w ascending): one monotone cursor.
+        int srcPos = 0;
+        int cursor = 0;
         for (int w = 0; w < outSections; w++) {
             int src = w + shiftSections;
             if (src >= 0 && src < parsed) {
+                while (cursor < src) {
+                    srcPos += lengths[cursor++];
+                }
                 int len = lengths[src];
-                System.arraycopy(in, starts[src], out, outPos, len);
+                System.arraycopy(in, srcPos, out, outPos, len);
                 outPos += len;
+                srcPos += len;
+                cursor = src + 1;
             } else {
                 System.arraycopy(EMPTY_SECTION, 0, out, outPos, EMPTY_SECTION.length);
                 outPos += EMPTY_SECTION.length;

@@ -27,9 +27,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * extension classloader resolves from Geyser's own jars (parent-first), so identity always matches.
  */
 public final class SkyWindowCore {
-    /** What the packet-shape assumptions in docs/ have been verified against; shown by /skywindow doctor. */
-    public static final String TESTED_AGAINST = "Geyser 2.11.2-SNAPSHOT / Minecraft 1.21.10 / MCProtocolLib 26.2 @ 2026-09-21; universal command oracle (server Brigadier tree = any plugin command, zero config) + fallback grammar + full packet & text-carrier audit (CI-enforced via dev/audit/packet_coverage.py) + exact suggestion-range mapping - docs/PACKET-MATRIX.md carries the details";
-
     private final SkyWindowExtension extension;
     private final Map<GeyserSession, SkyWindowSession> states = new ConcurrentHashMap<>();
     private volatile SkyWindowConfig config = SkyWindowConfig.loadDefault();
@@ -70,7 +67,6 @@ public final class SkyWindowCore {
                 Files.writeString(file, SkyWindowConfig.sampleFileContents());
             }
             config = SkyWindowConfig.load(file);
-            commandConfig = deriveCommandConfig(config);
         } catch (IOException e) {
             extension.logger().warning("[SkyWindow] could not read " + file + ", using defaults: " + e.getMessage());
             config = SkyWindowConfig.loadDefault();
@@ -130,17 +126,6 @@ public final class SkyWindowCore {
         }
     }
 
-    /** Per-type quarantine registry (deterministic transform failures), for /skywindow doctor. */
-    private final Map<String, String> quarantinedTypes = new ConcurrentHashMap<>();
-
-    public void reportQuarantinedType(String typeName, String reason) {
-        quarantinedTypes.put(typeName, reason);
-    }
-
-    public Map<String, String> quarantinedTypes() {
-        return quarantinedTypes;
-    }
-
     /** Player names into logs: strip control characters (log-injection hardening, Geyser does the same). */
     public String safeName(String name) {
         if (name == null || name.isEmpty()) {
@@ -167,8 +152,7 @@ public final class SkyWindowCore {
 
     private void detachAll() {
         for (SkyWindowSession state : states.values()) {
-            state.frozen = false;
-            state.offset = 0;
+            state.frame = SkyWindowSession.FrameState.INITIAL;
             state.resetChunkCache();
             var channel = state.channel;
             if (channel != null && channel.isActive()) {
@@ -201,32 +185,9 @@ public final class SkyWindowCore {
             any, config.rewriteCommands, config.commandSchemas, config.rewriteVanillaCommands);
     }
 
-    public SkyWindowSession state(GeyserSession session) {
-        return states.get(session);
-    }
-
-    /** Manual exact-window move for {@code /skywindow window <realY>} (builder tooling). */
-    public boolean forceWindow(GeyserSession session, double realY) {
-        SkyWindowSession state = states.get(session);
-        var channel = state == null ? null : state.channel;
-        if (channel == null || !channel.isActive()) {
-            return false;
-        }
-        var handler = channel.pipeline().get(SkyWindowHandler.HANDLER_NAME);
-        if (handler instanceof SkyWindowHandler h) {
-            h.forceWindow(realY);
-            return true;
-        }
-        return false;
-    }
-
     public int currentOffset(GeyserSession session) {
         SkyWindowSession state = states.get(session);
-        return state == null ? 0 : state.offset;
-    }
-
-    public boolean worldManagerShifted() {
-        return worldManagerShifted;
+        return state == null ? 0 : state.frame.offset();
     }
 
     // ------------------------------------------------------------------ session lifecycle
@@ -359,7 +320,7 @@ public final class SkyWindowCore {
      *
      * If both fail (a future Geyser that reorganizes the bootstrap), SkyWindow still removes
      * block/placement desync at the packet layer but session-aware direct world reads (collision
-     * corrections) may still disagree - the log and {@code /skywindow doctor} say so explicitly.
+     * corrections) may still disagree - the startup log says so explicitly.
      */
     private void installShiftedWorldManager() {
         if (worldManagerShifted) {
@@ -392,7 +353,7 @@ public final class SkyWindowCore {
             worldManagerShifted = false;
             extension.logger().warning("[SkyWindow] could not wrap the platform world manager (" + t
                 + "); high-altitude movement corrections from Geyser-side direct world reads may still occur -"
-                + " run /skywindow doctor after updating Geyser");
+                + " check the startup log after updating Geyser");
         }
     }
 
