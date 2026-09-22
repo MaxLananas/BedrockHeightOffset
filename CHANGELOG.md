@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0 (unreleased)
+
+- Universal command oracle on **Mojang Brigadier**: the wire command tree is rebuilt into real Brigadier nodes (vendored MIT sources, package-relocated to `fr.buildtheearth.skywindow.brigadier`, see `THIRD-PARTY-NOTICES.md`) and parsed with Minecraft's own parser - literal-exact matching, argument fallback with backtracking, redirect aliases, and Y character ranges straight from the parse. The 1.2.0 structural walker remains as fallback engine; the grammar heuristics remain the last resort. Pinned contracts are unchanged.
+- **In-game dev commands removed**: `/skywindow audit|map|reveal|preview` are gone - the extension is fully invisible and zero-config.
+- Contributor credited as **MaxLananas** (extension manifest, POM, README).
+- Deterministic seeded fuzz suite (`FuzzTest`): rewriter (never throws, token/length contracts), `resliceTolerant` (exact output lengths), tree index over hostile random trees (never throws).
+- `docs/RESEARCH-NOTES.md`: Geyser's upstream "can't fix" (GeyserMC/Geyser#3804), BedrockHeightGuard's opposite approach, Brigadier MIT provenance.
+
+
 All notable changes to SkyWindow. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) against the
 pinned Geyser build (see README "Version compatibility" for why that pin *is* the API surface).

@@ -1,6 +1,5 @@
 package fr.buildtheearth.skywindow;
 
-import fr.buildtheearth.skywindow.command.SkyWindowCommand;
 import org.geysermc.event.subscribe.Subscribe;
 import org.geysermc.geyser.api.event.bedrock.SessionDisconnectEvent;
 import org.geysermc.geyser.api.event.bedrock.SessionInitializeEvent;
@@ -77,6 +76,5 @@ public final class SkyWindowExtension implements Extension {
 
     @Subscribe
     public void onDefineCommands(GeyserDefineCommandsEvent event) {
-        event.register(SkyWindowCommand.build(this));
     }
 }

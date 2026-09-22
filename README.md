@@ -503,3 +503,5 @@ tool can fully prove — so here is exactly what *was* verified and where the re
 · [PACKET-MATRIX.md](docs/PACKET-MATRIX.md) (per-packet policy table)
 · [VERIFICATION.md](docs/VERIFICATION.md) (staging checklist to run with real clients)
 · [CHANGELOG.md](CHANGELOG.md) (release notes).*
+
+<p>Contributor: <b>MaxLananas</b>.</p>

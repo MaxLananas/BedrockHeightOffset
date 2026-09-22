@@ -105,7 +105,7 @@ public final class CommandYRewrite {
         boolean fromTree = false;
         BitSet ySlots;
         if (tree != null) {
-            BitSet treeSlots = tree.ySlots(tokens);
+            BitSet treeSlots = tree.ySlots(trimmed);
             if (treeSlots != null) {
                 ySlots = treeSlots;
                 fromTree = true;
@@ -137,12 +137,16 @@ public final class CommandYRewrite {
 
     // ------------------------------------------------------------------ tokenization
 
+    /** One token of the {@code split(" ")} contract plus its character offset in the source text. */
+    record Token(String text, int start) {
+    }
+
     /**
      * {@code split(" ")} semantics (interior empties kept, trailing dropped) with SNBT and quoted
-     * regions protected so their spaces do not create tokens. Package-visible for
-     * {@link CommandTreeIndex}, which must tokenize exactly the same way.
+     * regions protected so their spaces do not create tokens. The offset-carrying form drives both
+     * the rewrite (token splicing) and the tree oracle (character ranges) from ONE segmentation.
      */
-    static List<String> tokenize(String command) {
+    static List<Token> tokenizeWithOffsets(String command) {
         char[] chars = command.toCharArray();
         int depth = 0;
         boolean quoted = false;
@@ -175,9 +179,28 @@ public final class CommandYRewrite {
                 }
             }
         }
-        List<String> out = new ArrayList<>();
-        for (String token : new String(chars).split(" ")) {
-            out.add(token.replace('\0', ' '));
+        String protectedText = new String(chars);
+        List<Token> out = new ArrayList<>();
+        int segStart = 0;
+        for (int i = 0; i < protectedText.length(); i++) {
+            if (protectedText.charAt(i) == ' ') {
+                out.add(new Token(protectedText.substring(segStart, i).replace('\0', ' '), segStart));
+                segStart = i + 1;
+            }
+        }
+        out.add(new Token(protectedText.substring(segStart).replace('\0', ' '), segStart));
+        while (!out.isEmpty() && out.get(out.size() - 1).text().isEmpty()) {
+            out.remove(out.size() - 1); // split(" ") drops trailing empties
+        }
+        return out;
+    }
+
+    /** {@link #tokenizeWithOffsets} without the offsets - the {@code split(" ")} contract. */
+    static List<String> tokenize(String command) {
+        List<Token> tokens = tokenizeWithOffsets(command);
+        List<String> out = new ArrayList<>(tokens.size());
+        for (Token token : tokens) {
+            out.add(token.text());
         }
         return out;
     }
