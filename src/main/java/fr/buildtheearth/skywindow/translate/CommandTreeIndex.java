@@ -94,18 +94,30 @@ public final class CommandTreeIndex {
             return null; // trailing junk or a shape failure somewhere: not a definitive answer
         }
         List<ParsedCommandNode<Object>> path = results.getContext().getNodes();
-        if (path.isEmpty() || path.get(path.size() - 1).getNode().getCommand() == null) {
+        var deepest = results.getContext();
+        while (deepest.getChild() != null) {
+            deepest = deepest.getChild(); // redirect chains end in the deepest context
+        }
+        List<ParsedCommandNode<Object>> deepestPath = deepest.getNodes();
+        boolean terminal = (!path.isEmpty() && path.get(path.size() - 1).getNode().getCommand() != null)
+            || (!deepestPath.isEmpty()
+                && deepestPath.get(deepestPath.size() - 1).getNode().getCommand() != null);
+        if (!terminal) {
             return null; // ended on a non-executable node: the server would reject the input
         }
         BitSet slots = new BitSet(tokens.size());
-        for (var argument : results.getContext().getArguments().values()) {
-            Object value = argument.getResult();
-            if (value instanceof List<?> list) {
-                for (Object item : list) {
-                    if (item instanceof CommandSpans.Span span) {
-                        int index = tokenIndexAt(tokens, span.start());
-                        if (index >= 0) {
-                            slots.set(index);
+        // Redirect aliases ("home" -> "mywarp") parse their arguments inside a child context that
+        // Brigadier links with withChild(); walk the whole chain or the alias's coordinates vanish.
+        for (var context = results.getContext(); context != null; context = context.getChild()) {
+            for (var argument : context.getArguments().values()) {
+                Object value = argument.getResult();
+                if (value instanceof List<?> list) {
+                    for (Object item : list) {
+                        if (item instanceof CommandSpans.Span span) {
+                            int index = tokenIndexAt(tokens, span.start());
+                            if (index >= 0) {
+                                slots.set(index);
+                            }
                         }
                     }
                 }
