@@ -1,7 +1,7 @@
 # Staging verification checklist
 
 Run on a staging server before a public deployment. Each step names the exact expected observation;
-if reality differs, capture `/skywindow watch on` + `/skywindow recent` output and `/skywindow doctor` before filing.
+if reality differs, capture the startup log lines (world-manager seam, `window client[…] java[…]` with `log-switches=true`) before filing.
 
 ## Setup
 
@@ -14,12 +14,12 @@ if reality differs, capture `/skywindow watch on` + `/skywindow recent` output a
 ## Preflight
 
 - [ ] Server log contains `[SkyWindow] world manager wrapped...` and the activation line.
-- [ ] `/skywindow doctor`: **attached ✔**, **world manager ✔**, windowing line matches your dimension.
-- [ ] `/skywindow info` near spawn: offset 0 (real space), cached chunks > 0.
+- [ ] Startup log: **world manager wrapped (…)** line present; a `window client[…] java[…]` line matches your dimension.
+- [ ] Join near spawn: no `height window` line yet (offset 0 = real space), chunk traffic flowing.
 
 ## Passive-mode proof (do not skip — this is the zero-risk guarantee)
 
-- [ ] Set dimension to a vanilla-height world (`height: 384`). `/skywindow info` → `windowing ...
+- [ ] Set dimension to a vanilla-height world (`height: 384`). The `window client[…] java[…]` log line shows windowing not needed.
       skipped`, stats counters **all zero** after full play. If any counter moves here, stop:
       the no-op property is violated.
 
@@ -27,9 +27,9 @@ if reality differs, capture `/skywindow watch on` + `/skywindow recent` output a
 
 | # | Action | Expected |
 |---|---|---|
-| 1 | `/tp @s 0 600 0` (Bedrock chat) at low Y | No rubber-band; ground under feet present; `/skywindow info` offset ≈ snap600 = 608-ish → client shows Y≈0 |
+| 1 | `/tp @s 0 600 0` (Bedrock chat) at low Y | No rubber-band; ground under feet present; the snap log line shows clientY≈0 (offset ≈ 608-ish = snap600) |
 | 2 | Place + break blocks at Y≈600 | Blocks stay. Rejoin: still there (server truth). |
-| 3 | Climb ladder/elytra continuously up ~1000 blocks | At most 1–2 brief terrain re-settles (`/skywindow stats`: windowSwitches 1–2, chunkReplays ≈ view area); no corrective movement packets (no kick/teleport back); watch ring shows snap teleports only at switch points |
+| 3 | Climb ladder/elytra continuously up ~1000 blocks | At most 1–2 brief terrain re-settles (exactly one `height window … -> …` log line per ~450 climbed blocks); no corrective movement packets (no kick/teleport back) |
 | 4 | Hover exactly at margin (fly up/down repeatedly around 460–500 client-Y) | ≤1 switch (cooldown + centering hysteresis) |
 | 5 | Open chest/hopper/barrel/furnace at altitude; walk away and back | Containers open/close without being reset |
 | 6 | Redstone: place repeater + dust at altitude, flip lever | Runs; hoppers move items; no rollback of powered blocks |
@@ -40,11 +40,11 @@ if reality differs, capture `/skywindow watch on` + `/skywindow recent` output a
 | 11 | Ride a horse/boat/minecart at altitude | No desync when dismounting; vehicle stays |
 | 12 | Change dimension (nether portal) and back | Nether passive (offset 0); return to overworld at altitude: chunks replay/snap, playable |
 | 13 | Two Bedrock players, different heights (400 vs 1500) | Each sees own window; they see each other at coherent relative positions; both can `/tp` to each other (relative/`~`) |
-| 14 | `/skywindow stats` after all the above | `malformed chunks = 0`; drops only during freeze windows |
+| 14 | Log after all the above | No `payload normalized` warnings, no transform-error/quarantine lines |
 | 15 | Restart server mid-climb, rejoin at altitude | Clean recovery, no ghosts (cache rebuilds at identity, then one switch) |
-| 16 | `/skywindow stats reset`, then `/skywindow window <realY near ceiling>` | counters re-baseline (viewed deltas start at ~0); a forced switch lands through the normal protocol: terrain replay, snap, then movement resumes with **no** leftover offset in `info` (offset shown matches the forced frame); `doctor` shows the freeze µs and backoff |
+| 16 | Teleport/climb to a Y near the ceiling, then back down | Each switch lands through the normal protocol (terrain replay, snap, movement resumes) with one `height window … -> … (player real Y …)` line each way; terrain re-settles correctly at both ends |
 | 17 | Elytra dive *through* a switch point with `freeze-hold-movement=true` | fall/velocity continues after the snap (held movement replayed in-frame); with the key set `false`, movement during the freeze is dropped instead - visible as a momentary stall. Either way: no rubber-band afterwards |
-| 18 | Spam `/skywindow window` back and forth at the same edge | switches throttle: `doctor` shows backoff climbing (2,4,8) and switch interval widening; server tick unaffected; toggling stops cleanly when you stop |
+| 18 | Spam large `/tp` jumps back and forth at the same height edge | switches throttle: `height window` lines get further apart (cooldown x backoff), server tick unaffected, and everything stops cleanly when you stop |
 | 19 | `announce-switches=true`: climb until a natural switch | exactly one chat line per switch, no spam during backed-off bursts |
 
 ## Negative / stress
@@ -61,6 +61,6 @@ if reality differs, capture `/skywindow watch on` + `/skywindow recent` output a
 
 ## Sign-off
 
-Record: Geyser build, MC versions, client platform/version, this checklist with the `/skywindow doctor` +
-`/skywindow stats` outputs. Only after this list passes on staging should a deployment be described as
+Record: Geyser build, MC versions, client platform/version, this checklist with the startup log +
+log lines. Only after this list passes on staging should a deployment be described as
 "verified against" those versions — the README version policy applies to you too.
