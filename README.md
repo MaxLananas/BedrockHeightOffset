@@ -353,6 +353,8 @@ Bedrock-side, per player (development diagnostics are real, not simulated):
 - `/skywindow explain <x y z>` — the builder's converter: shows what the server *executes* (real space)
   for the coordinates you see/type (window space), the inverse, and the rewritten `/tp` preview.
   Use it whenever a plugin message or a teammate's coordinates look "off by ~1400".
+- `/skywindow preview <command...>` — dry-run of the command rewrite: type the command exactly as you
+  would in chat and see the text the wire would carry (green = translated). Executes nothing.
 
 If a Bedrock player reports rubber-banding at altitude, in order: `/skywindow doctor` (world manager +
 attached), `/skywindow watch on` while reproducing, `/skywindow recent` output. All numbers on screen come from

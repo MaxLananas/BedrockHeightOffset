@@ -144,3 +144,25 @@ universal shape oracle for command-text rewriting (`CommandTreeIndex`). Re-sent 
 join and on op/permission changes; the index is rebuilt each time. Parser widths honored:
 `VEC3`/`BLOCK_POS` = 3 tokens (Y = middle), `COLUMN_POS`/`VEC2`/`ROTATION` = 2 (no Y), `MESSAGE`
 and greedy strings = rest, nested `command` arguments = recursive root parse, everything else = 1.
+
+## Text carriers: the complete list (CI-gated)
+
+Position fields are only half the story - commands hide inside strings. Every packet whose payload
+can carry command text is on this list, and `dev/audit/packet_coverage.py` fails the build if one of
+them disappears from the pipeline or a new `String command|text` field shows up uncovered:
+
+| Packet | What is translated | How |
+|---|---|---|
+| `ServerboundChatCommandPacket` | command text | full grammar + tree (+O) |
+| `ServerboundChatCommandSignedPacket` | command text (empty-signature gate) | same |
+| `ServerboundSetCommandBlockPacket` | stored `command` | same |
+| `ServerboundSetCommandMinecartPacket` | minecart `command` | same |
+| `ServerboundCommandSuggestionPacket` | partial command being typed | same; the view->wire text mapping is journaled per transaction id |
+| `ClientboundCommandSuggestionsPacket` | `start`/`length` range offsets | mapped back to the editing frame through the journaled token mapping (`SuggestionRanges`) |
+| `ClientboundBlockEntityDataPacket` | block-entity `Command` NBT | grammar + tree (−O), editor display |
+
+**Reviewed non-carriers:** `ServerboundChatPacket` is message content, not coordinates.
+Sign/book `clickEvent.run_command` values are deliberately **not** rewritten in place: they execute
+through the chat-command path at click time, where the text is translated then. Plain coordinate
+numbers inside books, lore or item NBT are item content data, not protocol positions - documented
+boundary, no packet class is silently ignored getting there.

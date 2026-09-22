@@ -4,6 +4,34 @@ All notable changes to SkyWindow. The format follows [Keep a Changelog](https://
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) against the
 pinned Geyser build (see README "Version compatibility" for why that pin *is* the API surface).
 
+## [1.2.1] - 2026-09-21
+
+Packet-precision release: the last command-text carriers are covered, with an exact character-level
+mapping for the one round-trip that can desync under rewriting, and the "no packet forgotten"
+contract now gates text payloads too.
+
+### Added
+
+- **Tab-completion round-trip is exact**: `ServerboundCommandSuggestionPacket` partial commands are
+  rewritten like every command text; `ClientboundCommandSuggestionsPacket` suggestion ranges are
+  mapped back to the player's editing frame through `SuggestionRanges` (token-aligned, character-
+  exact offsets, per-transaction journal, degrade-forward when unknown). Both directions travel
+  through the freeze/replay machinery as command packets.
+- **`/skywindow preview <command...>`**: dry-run of the exact rewrite pipeline (type it, see what
+  the wire would carry, execute nothing).
+- **Audit v2**: the packet-coverage gate now fails CI when a known text carrier (7 entries) leaves
+  the pipeline or a new `String command|text` packet field appears uncovered. Reviewed non-carriers
+  documented (chat content; sign/book `run_command` values execute through the chat path at click
+  time and are never rewritten in place).
+- **`SectionCodecStressTest`**: reslice proofs at BTE scale (128 sections / 2048 blocks, the exact
+  126-section offset geometry, mixed palette types at 96 sections, adversarial negative palette
+  counts at scale).
+
+### Fixed
+
+- Suggestion range mapping walks full token coordinates (a common-prefix shortcut that skewed
+  offsets was removed before release; every expected offset is hand-traced and pinned).
+
 ## [1.2.0] - 2026-09-21
 
 The universal commands release: **every command of every plugin now works with zero configuration**.

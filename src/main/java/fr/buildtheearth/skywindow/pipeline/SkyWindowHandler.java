@@ -31,6 +31,8 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.Serv
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundMovePlayerPosRotPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundMoveVehiclePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundCommandsPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundCommandSuggestionsPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundCommandSuggestionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundPlayerActionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundUseItemOnPacket;
 
@@ -263,6 +265,11 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             return;
         }
         Object translated = InboundYTransforms.apply(packet, offset, core.commandConfig(), state.commandTree);
+        if (translated instanceof ClientboundCommandSuggestionsPacket suggestions) {
+            // Suggestion ranges are offsets into the rewritten request text; map them back to the
+            // text this player is actually editing (SuggestionRanges is the exact token mapping).
+            translated = state.suggestionJournal.mapBack(suggestions);
+        }
         if (translated != packet) {
             state.inTranslated.increment();
             if (state.watch) {
@@ -282,6 +289,21 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
             currentReal = session.getPlayerEntity().position().getY() + state.offset;
         }
         return currentReal + packetY;
+    }
+
+    /**
+     * When a suggestion request's partial command was rewritten on its way to the wire, records the
+     * exact text mapping so the response ranges can be mapped back to the player's editing frame.
+     * Runs at every wire write (normal and replay), so the recorded mapping is always the one the
+     * server actually saw.
+     */
+    private Object trackSuggestion(Object original, Object written) {
+        if (written instanceof ServerboundCommandSuggestionPacket out
+            && original instanceof ServerboundCommandSuggestionPacket req
+            && out != req) {
+            state.suggestionJournal.note(req.getTransactionId(), req.getText(), out.getText());
+        }
+        return written;
     }
 
     // ---------------------------------------------------------------- outbound
@@ -322,6 +344,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                         watch("OUT", shortName(packet), "y+" + offset);
                     }
                 }
+                translated = trackSuggestion(packet, translated);
                 ctx.write(translated, promise);
                 return;
             }
@@ -478,6 +501,7 @@ public final class SkyWindowHandler extends ChannelDuplexHandler {
                         out = OutboundYTransforms.apply(packet, frozenFrame, core.commandConfig(), state.commandTree);
                     }
                 }
+                out = trackSuggestion(entry.packet(), out);
                 self.write(out, entry.promise()); // below this handler: no re-transform
             } catch (Throwable t) {
                 quarantine("replay", (MinecraftPacket) entry.packet(), t);

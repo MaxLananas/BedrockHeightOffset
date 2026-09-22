@@ -43,10 +43,12 @@ public final class SkyWindowCommand {
             case "stats" -> stats(session, state, args);
             case "window" -> window(core, session, state, args);
             case "explain" -> explain(session, state, args);
+            case "preview" -> preview(core, session, state, args);
             default -> send(session,
                 "§7Usage: §f/skywindow info §7| §f/skywindow watch <on|off> §7| §f/skywindow recent",
                 "§7       §f/skywindow doctor §7| §f/skywindow stats [reset] §7| §f/skywindow window <realY>",
-                "§7       §f/skywindow explain <x y z> §7(builder coordinates converter)");
+                "§7       §f/skywindow explain <x y z> §7(builder coordinates converter)",
+                "§7       §f/skywindow preview <command...> §7(see the rewrite, run nothing)");
         }
     }
 
@@ -254,6 +256,38 @@ public final class SkyWindowCommand {
             "§7server executes (real): §f" + parsed[0] + " " + realY + " " + parsed[2],
             "§7inverse (real -> view): §f" + parsed[0] + " " + (viewY - offset) + " " + parsed[2],
             "§7command preview: §f/tp " + parsed[0] + " " + realY + " " + parsed[2]);
+    }
+
+    /**
+     * Dry-run of the command rewrite: what you typed (window space) vs what the wire would carry
+     * (real space), through the exact pipeline the chat path uses. Executes nothing.
+     */
+    private static void preview(SkyWindowCore core, GeyserSession session, SkyWindowSession state,
+                                String[] args) {
+        if (args.length < 2) {
+            send(session, "§7Usage: §f/skywindow preview <command...> §7(the command as you would type it)");
+            return;
+        }
+        String typed = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
+        int offset = state == null ? 0 : state.offset;
+        String rewritten;
+        try {
+            rewritten = fr.buildtheearth.skywindow.translate.CommandYRewrite.rewrite(
+                typed, offset, core.commandConfig(),
+                state == null ? null : state.commandTree);
+        } catch (RuntimeException e) {
+            send(session, "§crewrite error: " + e);
+            return;
+        }
+        send(session,
+            "§bSkyWindow preview §7(offset §f" + offset + "§7, nothing executed):",
+            "§7you type: §f" + typed);
+        if (rewritten == null) {
+            send(session, "§7wire carries: §f" + typed + " §7(nothing to translate - already real-space, "
+                + "relative, or non-positional)");
+        } else {
+            send(session, "§7wire carries: §a" + rewritten);
+        }
     }
 
     private static int currentRealY(GeyserSession session, SkyWindowSession state) {

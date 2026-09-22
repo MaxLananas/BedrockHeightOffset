@@ -136,6 +136,9 @@ public final class SkyWindowSession {
     public volatile WindowConfig window;
     /** Server command tree index (rebuilt whenever the server re-sends its Brigadier tree). */
     public volatile fr.buildtheearth.skywindow.translate.CommandTreeIndex commandTree;
+    /** View->wire text mappings of in-flight tab-completion requests (see SuggestionRanges). */
+    public final fr.buildtheearth.skywindow.translate.SuggestionRanges.Journal suggestionJournal =
+        new fr.buildtheearth.skywindow.translate.SuggestionRanges.Journal();
     /**
      * True when the cached window snapshot may predate Geyser's own dimension setup:
      * {@code ChunkUtils.loadDimension} runs in the login/respawn TRANSLATORS, i.e. strictly after

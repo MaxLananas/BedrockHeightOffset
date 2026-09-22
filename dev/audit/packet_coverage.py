@@ -95,6 +95,56 @@ def is_positional(type_str: str, name: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------- text carriers
+
+# Packets whose payload can carry COMMAND TEXT (positions hiding in strings, not fields). The
+# position-field audit above cannot see these; this curated gate + auto-scan makes sure none is
+# forgotten when protocol versions move things around. Checked against the SkyWindow sources.
+TEXT_CARRIERS = {
+    "ServerboundChatCommandPacket": "chat command text",
+    "ServerboundChatCommandSignedPacket": "signed chat command text (gated on empty signatures)",
+    "ServerboundSetCommandBlockPacket": "stored command-block command",
+    "ServerboundSetCommandMinecartPacket": "command-minecart command",
+    "ServerboundCommandSuggestionPacket": "tab-completion partial command",
+    "ClientboundCommandSuggestionsPacket": "suggestion ranges (mapped back to the editing frame)",
+    "ClientboundBlockEntityDataPacket": "block-entity Command NBT (editor display)",
+}
+# Text payloads that are CONTENT, not coordinates - reviewed and deliberately not rewritten.
+TEXT_ALLOWLIST_EXTRA = {
+    "ServerboundChatPacket": "plain chat message content (content, not coordinates)",
+}
+
+
+def check_text_carriers(mcpl_root: Path, src_root: Path, allowlist: set) -> list:
+    chain_text = ""
+    for rel in TRANSFORM_FILES.values():
+        chain_text += (src_root / rel).read_text(encoding="utf-8", errors="replace")
+    chain_text += (src_root / "fr/buildtheearth/skywindow/pipeline/SkyWindowHandler.java").read_text(
+        encoding="utf-8", errors="replace")
+    errors = []
+    for name, why in sorted(TEXT_CARRIERS.items()):
+        if name not in chain_text:
+            errors.append(f"text carrier NOT referenced anywhere in the pipeline: {name} ({why})")
+    # Auto-scan: any packet declaring a String field named 'command' or 'text' must be covered
+    # or explicitly allowlisted (the curated list above is for array/NBT carriers the scan cannot see).
+    covered = set(TEXT_CARRIERS) | set(TEXT_ALLOWLIST_EXTRA) | allowlist | set(
+        re.findall(r"instanceof (\w+Packet)\b", chain_text))
+    for rel_dir in PACKET_DIRS:
+        packet_dir = mcpl_root / rel_dir
+        if not packet_dir.is_dir():
+            continue
+        for java_file in sorted(packet_dir.rglob("*Packet.java")):
+            simple = java_file.stem
+            if simple in covered:
+                continue
+            for ftype, fname in packet_fields(java_file):
+                if ftype == "String" and fname in ("command", "text"):
+                    errors.append(
+                        f"packet with a String field '{fname}' is not covered by any text rule: "
+                        f"{simple} ({java_file.name}) - rewrite it, or add a reviewed allowlist entry")
+    return errors
+
+
 def main() -> int:
     if len(sys.argv) != 3:
         print(__doc__)
@@ -145,8 +195,10 @@ def main() -> int:
                        list((mcpl_root / d).rglob(f"{name}.java")) for d in PACKET_DIRS if (mcpl_root / d).is_dir()):
                 warnings.append(f"{direction} chain references {name} not found in master (pin-sensitive)")
 
+    errors.extend(check_text_carriers(mcpl_root, src_root, allowlist))
     print(f"packet coverage audit: {checked} packet classes scanned, "
-          f"{positional_total} carry positions, allowlist entries: {len(allowlist)}")
+          f"{positional_total} carry positions, {len(TEXT_CARRIERS)} text carriers gated, "
+          f"allowlist entries: {len(allowlist)}")
     for warning in warnings:
         print(f"WARNING: {warning}")
     if errors:

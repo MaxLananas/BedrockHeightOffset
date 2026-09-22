@@ -5,6 +5,7 @@ import org.cloudburstmc.math.vector.Vector3i;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandSignedPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundPickItemFromBlockPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundCommandSuggestionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundSetCommandBlockPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundSetCommandMinecartPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundSetJigsawBlockPacket;
@@ -62,12 +63,13 @@ public final class OutboundYTransforms {
             || packet instanceof ServerboundUseItemOnPacket;
     }
 
-    /** Chat commands and command-block edits carry their position as text; frame-translated like movement (sender's frame). */
+    /** Chat commands, command-block edits and suggestion requests carry their position as text; frame-translated like movement (sender's frame). */
     public static boolean isCommandPacket(Object packet) {
         return packet instanceof ServerboundChatCommandSignedPacket
             || packet instanceof ServerboundChatCommandPacket
             || packet instanceof ServerboundSetCommandBlockPacket
-            || packet instanceof ServerboundSetCommandMinecartPacket;
+            || packet instanceof ServerboundSetCommandMinecartPacket
+            || packet instanceof ServerboundCommandSuggestionPacket;
     }
 
     /**
@@ -191,6 +193,14 @@ public final class OutboundYTransforms {
             String rewritten = CommandYRewrite.rewrite(p.getCommand(), offset, commands, tree);
             if (rewritten != null) {
                 return p.withCommand(rewritten);
+            }
+        }
+        if (packet instanceof ServerboundCommandSuggestionPacket p && commands.enabled()) {
+            // Tab-completion carries the partial command being typed: its coordinates are view-space
+            // like every other command text. The response range mapping lives in SuggestionRanges.
+            String rewritten = CommandYRewrite.rewrite(p.getText(), offset, commands, tree);
+            if (rewritten != null) {
+                return p.withText(rewritten);
             }
         }
         return packet;
