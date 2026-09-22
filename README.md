@@ -289,7 +289,7 @@ rather than corrupting.
    sha256 file on GitHub Releases), or build it yourself: `mvn package` (needs JDK 21; resolves the Geyser
    `api` + `core` artifacts and JUnit from the OpenGeyser repository, and enforces that no
    Bukkit/Spigot/Paper/ProtocolLib dependency ever sneaks in).
-3. Put `skywindow-1.1.0.jar` (the artifact of the `v1.1.0` release; verify against the published
+3. Put `skywindow-1.3.0.jar` (the artifact of the `v1.3.0` release; verify against the published
    `SHA256SUMS.txt`) into the **extensions** folder:
    `plugins/Geyser-Spigot/extensions/` (Spigot/Paper) or `extensions/` next to the standalone jar.
 4. Start the server. A default `config.properties` is written next to the extension. **No Java-side
