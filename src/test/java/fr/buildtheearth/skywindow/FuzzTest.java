@@ -113,9 +113,10 @@ public final class FuzzTest {
             assertEquals(plain.size(), tokens.size(), "token count mismatch");
             for (int j = 0; j < tokens.size(); j++) {
                 assertEquals(plain.get(j), tokens.get(j).text(), "token text mismatch");
+                String protectedText = tokens.get(j).text().replace(' ', '\0');
                 String slice = input.substring(tokens.get(j).start(),
-                    tokens.get(j).start() + tokens.get(j).text().replace(' ', '\\0').length());
-                assertEquals(tokens.get(j).text().replace(' ', '\\0'), slice, "offset mismatch");
+                    tokens.get(j).start() + protectedText.length());
+                assertEquals(protectedText, slice, "offset mismatch");
             }
         }
     }
