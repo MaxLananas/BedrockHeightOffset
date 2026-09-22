@@ -64,9 +64,8 @@ all receive and produce one single, self-consistent coordinate frame: the client
   event-loop enqueue for other threads, and any packet translated with a *stale* frame still maps to
   the same real coordinate the sender currently uses (`realY = clientY + O`), which is the exact
   property that keeps a switch race benign instead of catastrophic.
-- Commands (`/skywindow …`) read volatiles + a synchronized snapshot of the (opt-in) watch ring;
-  a command that mutates (`/skywindow window <realY>`) is bounced to the session's event loop via
-  the pipeline handler, never executed on the command thread.
+- There are no commands at all since 1.3.0: nothing reads session state outside the packet path,
+  the logs and the test suite.
 - A single sweeper on `GeyserImpl.getInstance().getScheduler()` (60 s period) is the only other
   thread touching state: it reclaims per-session state for closed sessions when Geyser's disconnect
   event did not fire (proxy hiccups, half-open connections), resetting the chunk cache - the one
@@ -136,7 +135,7 @@ LRU under the configured chunk and byte caps. Replay derives windowed copies on 
 - Malformed/short/oversized chunk payload → **tolerant normalization**: content up to the
   anomaly is preserved and re-homed, the rest is canonical air, output always has exactly the
   expected section count (so Geyser's decoder can never run past the payload into the light
-  data), and the `anomaly-normalized chunks` counter surfaces it in `/skywindow doctor`.
+  data), and the anomaly surfaces as a rare warning line in the log.
 - Block interactions sent during a switch freeze → queued and replayed on unfreeze in the sender's
   original frame (never dropped, never double-applied; queue overflow (cap 96) drops explicitly and
   reverts any possible ghost block authoritatively).
@@ -151,8 +150,8 @@ LRU under the configured chunk and byte caps. Replay derives windowed copies on 
 
 | Seam | Used for | Breaks as | Detected by |
 |---|---|---|---|
-| `NetworkConstants.CODEC_NAME` / `MANAGER_NAME` pipeline insertion on the downstream channel | the choke point | attach retry → passive | `/skywindow doctor` (not attached), startup log |
-| `GeyserImpl` world-manager seam (A: `WorldManager`-typed field swap, B: `GeyserBootstrap` proxy over `bootstrap`) | collision/container read correction | log + degraded mode | `/skywindow doctor` |
+| `NetworkConstants.CODEC_NAME` / `MANAGER_NAME` pipeline insertion on the downstream channel | the choke point | attach retry → passive | startup attach warning + logs |
+| `GeyserImpl` world-manager seam (A: `WorldManager`-typed field swap, B: `GeyserBootstrap` proxy over `bootstrap`) | collision/container read correction | log + degraded mode | startup log warning |
 | mcprotocollib packet class shapes (`@With` builders, field names) | all transforms | per-packet: fail-safe passthrough (one log line) | `doctor` counters (`malformed` stays 0; watch rings) |
 | cloudburst `Vector3*`/math types | positions | none expected (shared API of the pinned build) | CI compile |
 

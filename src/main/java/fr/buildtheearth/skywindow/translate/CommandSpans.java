@@ -5,7 +5,6 @@ import fr.buildtheearth.skywindow.brigadier.arguments.ArgumentType;
 import fr.buildtheearth.skywindow.brigadier.exceptions.CommandSyntaxException;
 
 import java.util.ArrayList;
-import java.util.BitSet;
 import java.util.Collections;
 import java.util.List;
 

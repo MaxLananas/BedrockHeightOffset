@@ -19,7 +19,6 @@ import org.geysermc.mcprotocollib.protocol.data.game.level.particle.VibrationPar
 import org.geysermc.mcprotocollib.protocol.data.game.level.particle.positionsource.BlockPositionSource;
 import org.geysermc.mcprotocollib.protocol.data.game.level.waypoint.TrackedWaypoint;
 import org.geysermc.mcprotocollib.protocol.data.game.level.waypoint.Vec3iWaypointData;
-import org.geysermc.mcprotocollib.protocol.data.game.level.waypoint.WaypointData;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundGameTestHighlightPosPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundLoginPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundRespawnPacket;

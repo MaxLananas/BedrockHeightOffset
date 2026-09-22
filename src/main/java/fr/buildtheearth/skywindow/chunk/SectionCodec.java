@@ -197,8 +197,4 @@ public final class SectionCodec {
         return (int) readVarintScan(data, pos);
     }
 
-    /** Number of bytes the varint at {@code pos} occupies. */
-    public static int varintLength(byte[] data, int pos) {
-        return skipVarint(data, pos) - pos;
-    }
 }

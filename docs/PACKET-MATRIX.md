@@ -2,7 +2,7 @@
 
 Audit stamp: last re-derived against Geyser `2.11.2-SNAPSHOT` (Minecraft **1.21.10**, MCProtocolLib
 `26.2`) on 2026-09-21, from the authoritative upstream sources (every packet class below was read,
-not guessed). `SkyWindowCore.TESTED_AGAINST` carries the same string and is printed by `/skywindow doctor`,
+not guessed). docs/TESTED_AGAINST.md carries the same string,
 so a running server can always be checked against the audit it was compiled with.
 
 Every Java-protocol packet type that crosses the SkyWindow choke point (`SkyWindowHandler`, positioned
