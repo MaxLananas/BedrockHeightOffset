@@ -5,19 +5,20 @@ import fr.buildtheearth.skywindow.brigadier.arguments.ArgumentType;
 import fr.buildtheearth.skywindow.brigadier.exceptions.CommandSyntaxException;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Collections;
 import java.util.List;
 
 /**
  * Brigadier {@link ArgumentType}s that mirror how Minecraft's own command arguments consume text,
  * while reporting <b>which character ranges are Y coordinates</b>. This is the layer between the
- * vendored Mojang Brigadier parser (exact parse semantics: literals first, backtracking, ranges,
- * quotes) and SkyWindow's offset translation (exact Y token positions).
+ * vendored Mojang Brigadier parser (exact parse semantics: literals first, backtracking, ranges)
+ * and SkyWindow's offset translation (exact Y token positions).
  *
  * <p>Width rules follow the protocol's argument types: positions consume three coordinate pieces
- * (the middle one is the Y), column/vec2/rotation consume two and carry no Y, numeric arguments
- * named like a Y shift their single token, nested-command and message arguments eat the rest
- * (nested command text is recursively parsed against the root). Anything else consumes one token.</p>
+ * (the middle one is the Y), column/vec2/rotation consume two and carry no Y, numeric and string
+ * arguments named like a Y shift their single token, greedy tail arguments eat the rest without
+ * coordinates, and nested-command arguments are recursively parsed against the root tree.</p>
  */
 public final class CommandSpans {
 
@@ -75,16 +76,15 @@ public final class CommandSpans {
             this.root = root;
         }
 
-    @Override
-    @SuppressWarnings("unchecked")
-    public List<Span> parse(StringReader reader) throws CommandSyntaxException {
-        switch (kind) {
-            case POSITION3 -> {
-                String x = readPiece(reader);
-                int startY = reader.getCursor();
-                String y = readPiece(reader);
-                int endY = reader.getCursor();
-                readPiece(reader);
+        @Override
+        public List<Span> parse(StringReader reader) throws CommandSyntaxException {
+            switch (kind) {
+                case POSITION3 -> {
+                    String x = readPiece(reader);
+                    int startY = reader.getCursor();
+                    String y = readPiece(reader);
+                    int endY = reader.getCursor();
+                    readPiece(reader);
                     if (!isCoordinate(x) || !isCoordinate(y)) {
                         throw CommandSyntaxException.BUILT_IN_EXCEPTIONS
                             .readerExpectedDouble().createWithContext(reader);
@@ -98,7 +98,7 @@ public final class CommandSpans {
                 }
                 case SINGLE -> {
                     int start = reader.getCursor();
-                    String piece = readPiece(reader);
+                    readPiece(reader);
                     if (yNamed) {
                         return List.of(new Span(start, reader.getCursor()));
                     }
@@ -121,7 +121,7 @@ public final class CommandSpans {
                         fr.buildtheearth.skywindow.brigadier.ParseResults<Object> sub =
                             dispatcher.parse(rest, root.source());
                         if (sub.getReader().canRead()) {
-                            return List.of(); // nested text did not parse whole: server rejects it anyway
+                            return List.of(); // nested text did not parse whole: the server rejects it anyway
                         }
                         List<Span> spans = new ArrayList<>();
                         for (var entry : sub.getContext().getArguments().values()) {
@@ -157,54 +157,21 @@ public final class CommandSpans {
             return piece;
         }
 
-        private static boolean isCoordinate(String piece) {
-            if (piece == null || piece.isEmpty()) {
-                return false;
-            }
-            char first = piece.charAt(0);
-            if (first == '~' || first == '^') {
-                return true;
-            }
-            return CommandYRewrite.parseAbsoluteNumber(piece) != null;
-        }
-
         private static void skipWhitespace(StringReader reader) {
             while (reader.canRead() && Character.isWhitespace(reader.peek())) {
                 reader.skip();
             }
         }
-
-        private static boolean isCoordinate(String token) {
-            if (token.isEmpty()) {
-                return false;
-            }
-            char first = token.charAt(0);
-            if (first == '~' || first == '^') {
-                return true;
-            }
-            return CommandYRewrite.parseAbsoluteNumber(token) != null;
-        }
-
-        @Override
-        public java.util.Collection<String> getExamples() {
-            return Collections.emptyList();
-        }
     }
 
-    /** Collects every {@link Span} a parse produced (argument values are List&lt;Span&gt;). */
-    public static List<Span> spansOf(
-            fr.buildtheearth.skywindow.brigadier.context.CommandContextBuilder<Object> context) {
-        List<Span> spans = new ArrayList<>();
-        for (var entry : context.getArguments().values()) {
-            Object value = entry.getResult();
-            if (value instanceof List<?> list) {
-                for (Object item : list) {
-                    if (item instanceof Span span) {
-                        spans.add(span);
-                    }
-                }
-            }
+    private static boolean isCoordinate(String token) {
+        if (token == null || token.isEmpty()) {
+            return false;
         }
-        return spans;
+        char first = token.charAt(0);
+        if (first == '~' || first == '^') {
+            return true;
+        }
+        return CommandYRewrite.parseAbsoluteNumber(token) != null;
     }
 }
