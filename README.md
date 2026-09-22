@@ -89,7 +89,7 @@ Consequences of living inside the window rather than faking outside it:
   [the offset math](#the-math) for the general formula. No arbitrary "1952" ceiling exists in the
   code; it's derived from your dimension and your client.
 - A player's client-side coordinate readout (F3-style debug screens) shows **window space**, not
-  real Y. `~`-relative commands and the `/skywindow info` command exist for exactly that reason.
+  real Y. `~`-relative commands exist for exactly that reason.
 
 ## How SkyWindow works
 
@@ -185,7 +185,7 @@ Palettes, bit storages and counts are preserved as opaque byte ranges — no dec
 re-encoding, no scanning for "index-like bytes" (the fatal old trick). The walk is **tolerant**:
 a payload that is short, long or corrupt mid-way is *normalized* to exactly the section count
 Geyser's translator will loop over (air padding, content up to the anomaly preserved byte-exact)
-and flagged in `/skywindow stats` — never passed through half-walked, because a truncated payload
+and flagged in the logs — never passed through half-walked, because a truncated payload
 would make Geyser's own decoder read past the section array into the light data. A visual hole is
 acceptable; a decode exception on a packet thread is not.
 
@@ -215,7 +215,7 @@ coordinate before reading the real world. Collision sampling, container-block ch
 pot reads — all of them now resolve to the same real block the windowed client is looking at.
 `CollisionManager`'s correction path then *never disagrees with anything*, so no corrections
 occur. There is nothing to mask, and when the wrapper cannot be installed (e.g. a future Geyser
-that reorganizes the bootstrap), `/skywindow doctor` reports it instead of letting you discover it as
+that reorganizes the bootstrap), the startup seam checks report it instead of letting you discover it as
 rubber-banding.
 
 The second root cause class — mixed frames *between* layers — is structurally excluded: exactly
@@ -256,7 +256,7 @@ construction, not by convention.
 
 | Class (package `fr.buildtheearth.skywindow`) | Responsibility |
 |---|---|
-| `SkyWindowExtension` | Lifecycle glue: subscribes to Geyser events, owns `SkyWindowCore`, registers `/skywindow` (aliases `/sw`, `/bho`). |
+| `SkyWindowExtension` | Lifecycle glue: subscribes to Geyser events, owns `SkyWindowCore`. Since 1.3.0 it registers no commands at all - fully invisible. |
 | `SkyWindowCore` | Config load, per-session state registry, pipeline install (with bounded retry), `WorldManager` wrap (dual-strategy: field swap, else bootstrap proxy). |
 | `SkyWindowConfig` | Flat properties config (`config.properties` in the extension folder). |
 | `pipeline/SkyWindowHandler` | The choke point: inbound/outbound translation, position monitor, chunk cache, atomic switch, freeze, watch ring. |
@@ -267,7 +267,6 @@ construction, not by convention.
 | `chunk/SectionCodec` | Byte-range walker for the Java chunk section format (fail-closed on garbage). |
 | `translate/CommandYRewrite` | Absolute-Y rewrite for unsigned `/tp`-class commands (allowlisted; signature-safe). |
 | `world/ShiftedWorldManager` | Session-aware `+O` decorator over the platform world manager. |
-| `command/SkyWindowCommand` | `/skywindow info|watch|recent|doctor|stats`. |
 
 **Why a Geyser extension and not a Bukkit+ProtocolLib plugin** (the obvious alternative): on
 Geyser-Spigot, a Bukkit-plugin cannot reach the root cause at all — the collision/inventory world
@@ -277,7 +276,7 @@ is exactly the fragile duplication the audit condemned. The extension compiles a
 own classes (shaded mcprotocollib included, parent-first loading, never bundled) and sits where
 the coordinate systems legitimately meet. Deep integration is confined to **two identifiable,
 version-sensitive seams**: the pipeline insertion point and the world-manager field; both are probed
-at startup and reported by `/skywindow doctor`, and both degrade to "SkyWindow off for the affected feature"
+at startup, and both degrade to "SkyWindow off for the affected feature"
 rather than corrupting.
 
 ## Installation
@@ -296,7 +295,7 @@ rather than corrupting.
 4. Start the server. A default `config.properties` is written next to the extension. **No Java-side
    plugin is required or wanted**; installing the old 3.x plugin alongside will corrupt chunks.
 
-To check: `/skywindow doctor` from a Bedrock client (and see below).
+To check: the startup seam log lines (and see below).
 
 ## Configuration
 
@@ -330,36 +329,20 @@ is the client's negotiated dimension, the cap is derived from the world.
 Invalid values never crash the server: each one falls back to its default with a logged warning, and
 unknown keys are reported too - a typo like `freeze-mss` will not silently do nothing forever.
 
-## Commands and debugging
+## No commands
 
-Bedrock-side, per player (development diagnostics are real, not simulated):
+Since 1.3.0 SkyWindow registers **no commands at all** - not even developer tools. The extension is
+fully invisible and zero-config: nothing to type, nothing to remember, nothing for a player to
+discover. Every former diagnostic (`info`, `watch`, `recent`, `doctor`, `stats`, `window`, `explain`,
+`preview`, `audit`, `map`, `reveal`) lives in the server log and in the test suite instead; the
+staging recipe in [docs/VERIFICATION.md](docs/VERIFICATION.md) shows how to observe the rewrite on
+the wire without any in-game tool.
 
-- `/skywindow` or `/skywindow info` — active offset, attached/switching state, client window vs real dimension,
-  **your real Y** vs what the client shows, cached chunks count.
-- `/skywindow watch on|off` + `/skywindow recent` — a rolling ring of every translated packet with before/after
-  and the active offset (`IN MoveVehicle y-1440 (offset 1440)` …). Off by default; when off the
-  recording is a single boolean check — production stays silent.
-- `/skywindow doctor` — the four preflight facts: extension enabled, world-manager wrapper installed
-  (the anti-rubber-band fix), pipeline handler attached to your session, dimension bounds read +
-  whether windowing is engaged and why, the malformed-chunk passthrough counter, the last freeze
-  duration and current switch backoff, any packet types quarantined after a deterministic transform
-  failure, and the exact Geyser build this audit was run against. Run this after any Geyser update.
-- `/skywindow stats [reset]` — per-session counters (since login, or since the last reset): packets
-  in/out translated, chunks windowed/replayed, switches, actions held + queue overflows, drops while
-  frozen, chunk anomalies, and the last/total freeze duration in microseconds.
-- `/skywindow window <realY>` — force the *next* switch to home the window at a given real Y (QA tool;
-  it goes through the normal switch machinery on the session event loop - freeze, replay, backoff and
-  the derived cap all apply exactly as during automatic switches).
-- `/skywindow explain <x y z>` — the builder's converter: shows what the server *executes* (real space)
-  for the coordinates you see/type (window space), the inverse, and the rewritten `/tp` preview.
-  Use it whenever a plugin message or a teammate's coordinates look "off by ~1400".
-- `/skywindow preview <command...>` — dry-run of the command rewrite: type the command exactly as you
-  would in chat and see the text the wire would carry (green = translated). Executes nothing.
+If a Bedrock player reports rubber-banding at altitude, check the startup seam log lines (world
+manager wrapper + handler attach), reproduce with `log-switches` on, and grab the freeze/switch
+lines from the log. All numbers there come from the same state the pipeline uses, so a "looks right
+but broken" state means the pipeline itself is right and the report belongs upstream.
 
-If a Bedrock player reports rubber-banding at altitude, in order: `/skywindow doctor` (world manager +
-attached), `/skywindow watch on` while reproducing, `/skywindow recent` output. All numbers on screen come from
-the same state the pipeline uses, so a "looks right but broken" state means the pipeline itself is
-right and the report belongs upstream.
 
 ## Verification and tests
 
@@ -434,7 +417,7 @@ tool can fully prove — so here is exactly what *was* verified and where the re
 - **Item frames/banners on windowed blocks**: their *block entity* interactions resolve through the
   wrapped world manager, so state is coherent; but some Geyser entity paths re-derive bedrock-space
   positions from cached client state only — those are consistent within the window and were
-  exercised in code review; on a future Geyser that changes that derivation, `/skywindow doctor` +
+  exercised in code review; on a future Geyser that changes that derivation, the startup seam checks +
   staging retest is the contract.
 - **Bedrock's block-reach / camera quirks near ±512 client Y** (rendering clipping at the very
   edges of the dimension, not SkyWindow-induced) exist on extended-height vanilla Geyser too; the margin
@@ -443,11 +426,6 @@ tool can fully prove — so here is exactly what *was* verified and where the re
   300000 is not). That ceiling is Geyser's own chunk format cost, and SkyWindow inherits it; SkyWindow's cache
   is byte-capped so it never explodes, but such servers are impractical *for Geyser itself*, not
   for SkyWindow specifically.
-- **`/skywindow window <realY>` is deliberately the only forcing tool**: it re-homes the next switch
-  through the *normal* switch machinery (event loop, backoff, freeze, chunk replay) rather than
-  assigning an offset behind the pipeline's back — the 3.x habit of setting offsets asynchronously
-  was a bug source and stays gone. It cannot bypass the derived cap either: the target is clamped
-  exactly like every automatic switch.
 
 ## Performance
 
@@ -477,7 +455,7 @@ tool can fully prove — so here is exactly what *was* verified and where the re
   that precise combination is what CI verifies (see `.github/workflows/build.yml`).
 - Runtime requirement is "the Geyser your server runs", because the extension resolves core classes
   parent-first from it; a Geyser update can move the two seam points (pipeline handler names, world
-  manager field) — `/skywindow doctor` tells you immediately, and the failure mode of each seam is
+  manager field) — the startup seam checks tell you immediately, and the failure mode of each seam is
   off-for-you, not corruption.
 - **No untested compatibility claims are made.** The old README listed versions nobody verified;
   this one lists the one CI verifies and states how to check yours. MC/protocol specifics that this
@@ -489,8 +467,7 @@ tool can fully prove — so here is exactly what *was* verified and where the re
 
 - **SkyWindow on a server where it should not run:** on any server whose dimensions fit the client, SkyWindow
   is a verified no-op — but still: it *is* packet surgery. Staging first.
-- **Geyser updates:** the two seams are checked at startup per-session and reported by `/skywindow
-  doctor`; unattached/degraded is fail-safe (players simply experience vanilla Geyser behavior —
+- **Geyser updates:** the two seams are checked at startup per-session and reported by the startup seam checks; unattached/degraded is fail-safe (players simply experience vanilla Geyser behavior —
   out-of-window content is clipped by Geyser as today).
 - **Don't combine** with the old 3.x plugin, or any plugin that rewrites coordinates/heightmaps
   for Bedrock (e.g. height-extender clones): double translation is exactly what the previous rewrite died of.
