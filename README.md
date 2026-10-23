@@ -61,7 +61,8 @@ first start (the old file is kept), and the old commands `/skywindow`, `/sw` and
 ## Configuration
 
 Edit `extensions/hauteur/config.properties` (see the sample written on first start). Unknown keys and invalid
-values produce a startup warning and keep the default. Most keys are reloaded with `/geyser reload`.
+values produce a startup warning and keep the default. A value outside a key's range is clamped to the nearest
+limit and the change is logged the same way. Most keys are reloaded with `/geyser reload`.
 
 | Key | Default | Meaning |
 |---|---|---|

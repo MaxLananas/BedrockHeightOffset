@@ -72,15 +72,21 @@ public final class HauteurConfig {
         List<String> warnings = new ArrayList<>();
         warnUnknownKeys(props, warnings);
         config.enabled = bool(props, "enabled", config.enabled, warnings);
-        config.switchMarginBlocks = Math.min(256, Math.max(32, integer(props, "switch-margin-blocks", config.switchMarginBlocks, warnings)));
-        config.switchCooldownMs = Math.min(60_000L, Math.max(250L, longVal(props, "switch-cooldown-ms", config.switchCooldownMs, warnings)));
-        config.freezeMs = Math.min(5_000L, Math.max(100L, longVal(props, "freeze-ms", config.freezeMs, warnings)));
+        config.switchMarginBlocks = clampInt("switch-margin-blocks",
+            integer(props, "switch-margin-blocks", config.switchMarginBlocks, warnings), 32, 256, warnings);
+        config.switchCooldownMs = clampLong("switch-cooldown-ms",
+            longVal(props, "switch-cooldown-ms", config.switchCooldownMs, warnings), 250L, 60_000L, warnings);
+        config.freezeMs = clampLong("freeze-ms",
+            longVal(props, "freeze-ms", config.freezeMs, warnings), 100L, 5_000L, warnings);
         config.freezeHoldActions = bool(props, "freeze-hold-actions", config.freezeHoldActions, warnings);
         config.freezeHoldMovement = bool(props, "freeze-hold-movement", config.freezeHoldMovement, warnings);
         config.announceSwitches = bool(props, "announce-switches", config.announceSwitches, warnings);
-        config.chunkCacheMaxChunks = Math.min(32_768, Math.max(64, integer(props, "chunk-cache-max-chunks", config.chunkCacheMaxChunks, warnings)));
-        config.chunkCacheMaxMegabytes = Math.min(1_024, Math.max(8, integer(props, "chunk-cache-max-megabytes", config.chunkCacheMaxMegabytes, warnings)));
-        config.maxOffsetBlocks = alignToSection(integer(props, "max-offset-blocks", config.maxOffsetBlocks, warnings));
+        config.chunkCacheMaxChunks = clampInt("chunk-cache-max-chunks",
+            integer(props, "chunk-cache-max-chunks", config.chunkCacheMaxChunks, warnings), 64, 32_768, warnings);
+        config.chunkCacheMaxMegabytes = clampInt("chunk-cache-max-megabytes",
+            integer(props, "chunk-cache-max-megabytes", config.chunkCacheMaxMegabytes, warnings), 8, 1_024, warnings);
+        config.maxOffsetBlocks = alignSection("max-offset-blocks",
+            integer(props, "max-offset-blocks", config.maxOffsetBlocks, warnings), warnings);
         config.rewriteCommands = parseCommandList(props.getProperty("rewrite-commands", DEFAULT_REWRITE_COMMANDS));
         config.logSwitches = bool(props, "log-switches", config.logSwitches, warnings);
         config.warnings = List.copyOf(warnings);
@@ -131,8 +137,33 @@ public final class HauteurConfig {
         return Set.copyOf(out);
     }
 
-    private static int alignToSection(int blocks) {
-        return Math.max(0, blocks / 16 * 16);
+    /**
+     * Clamps a value into its range. A changed value keeps working, but it is reported, so an operator who wrote
+     * 9999 sees in the log that 256 is in use.
+     */
+    private static int clampInt(String key, int value, int min, int max, List<String> warnings) {
+        int clamped = Math.min(max, Math.max(min, value));
+        if (clamped != value) {
+            warnings.add("'" + key + "' is " + value + ", outside " + min + ".." + max + "; using " + clamped);
+        }
+        return clamped;
+    }
+
+    private static long clampLong(String key, long value, long min, long max, List<String> warnings) {
+        long clamped = Math.min(max, Math.max(min, value));
+        if (clamped != value) {
+            warnings.add("'" + key + "' is " + value + ", outside " + min + ".." + max + "; using " + clamped);
+        }
+        return clamped;
+    }
+
+    /** Rounds down to a whole section (16 blocks) and never below zero; a changed value is reported. */
+    private static int alignSection(String key, int blocks, List<String> warnings) {
+        int aligned = Math.max(0, blocks / 16 * 16);
+        if (aligned != blocks) {
+            warnings.add("'" + key + "' is " + blocks + "; using " + aligned + " (a non-negative multiple of 16)");
+        }
+        return aligned;
     }
 
     /**

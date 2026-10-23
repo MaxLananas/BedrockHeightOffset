@@ -38,7 +38,9 @@ class HauteurConfigTest {
         assertEquals(64, c.chunkCacheMaxChunks);
         assertEquals(1024, c.chunkCacheMaxMegabytes);
         assertEquals(192, c.maxOffsetBlocks, "forced offset must land on a section boundary");
-        assertTrue(c.warnings.isEmpty(), "clamping is silent by design, only bad input warns");
+        assertEquals(6, c.warnings.size(), "every changed value is reported, once");
+        assertTrue(c.warnings.stream().anyMatch(w -> w.contains("'switch-margin-blocks' is 9999")));
+        assertTrue(c.warnings.stream().anyMatch(w -> w.contains("'max-offset-blocks' is 200")));
 
         HauteurConfig low = parse(dir, """
             switch-margin-blocks=1
@@ -46,6 +48,7 @@ class HauteurConfigTest {
             """);
         assertEquals(32, low.switchMarginBlocks);
         assertEquals(0, low.maxOffsetBlocks, "negative offsets are not a thing");
+        assertTrue(low.warnings.stream().anyMatch(w -> w.contains("'max-offset-blocks' is -64")));
     }
 
     @Test

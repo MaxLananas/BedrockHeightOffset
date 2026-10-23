@@ -74,8 +74,10 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
   shifts are exact, whitespace is kept, and inputs that cannot be represented are left unchanged.
 - Plain (unsigned) chat commands are rewritten and dropped while the frame is uncertain, like their signed
   counterparts. Geyser sends only the signed form today, so this is hardening.
-- Player names: Unicode bidirectional overrides, zero-width characters, the byte-order mark and line or paragraph
-  separators are neutralised in logs.
+- Player names: Unicode bidirectional overrides, zero-width spaces, the byte-order mark and line or paragraph
+  separators are neutralised in logs. The zero-width joiner (U+200D) is kept, so emoji sequences stay readable.
+- Configuration values outside a key's range (for example `switch-margin-blocks=9999`) are still clamped, but the
+  change is now logged at startup or reload. Previously the clamp was silent.
 - `/hauteur watch` turned the watch on for any argument other than `off`. It now accepts only `on` and `off`.
 - `/hauteur stats reset` did not reset chunks that could not be replayed, journal overflows or transform failures.
 - `rewrite-commands` is trimmed and lower-cased, so an entry with spaces or capitals still matches.
