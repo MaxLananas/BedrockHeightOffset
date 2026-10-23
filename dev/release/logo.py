@@ -13,7 +13,7 @@ Design rules this follows (see assets/logo/README.md for the sources):
   * the monochrome variant keeps the same geometry in black, for single-colour contexts.
 
 Usage:  python3 dev/release/logo.py [--out assets/logo]
-Requires Python 3.9+ and Pillow (pip install pillow). No ImageMagick, no network.
+Requires Python 3.11+ and the pinned Pillow (pip install -r dev/release/requirements.txt). No ImageMagick, no network.
 """
 
 from __future__ import annotations

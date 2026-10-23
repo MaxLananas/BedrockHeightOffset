@@ -57,11 +57,11 @@ The exports are full-bleed squares with no pre-rounded corners. Platforms apply 
 ## Regenerate
 
 ```
-pip install pillow
+pip install -r dev/release/requirements.txt
 python3 dev/release/logo.py
 ```
 
-The script needs Python 3.9 or later and Pillow. It writes the SVG and PNG files above into `assets/logo/`.
+The script needs Python 3.11 or later and the Pillow version pinned in `dev/release/requirements.txt`. It writes the SVG and PNG files above into `assets/logo/`.
 
 ## Provenance and trademark
 

@@ -1,0 +1,4 @@
+# Export dependency of dev/release/logo.py, needed only to regenerate the logo PNG files.
+# Verified: with this exact version the committed SVG and PNG files are reproduced byte for byte.
+# Pillow 13 requires Python 3.11 or later.
+pillow==13.0.0
