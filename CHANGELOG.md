@@ -27,6 +27,9 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 
 ### Fixed
 
+- Packets held during a window switch were written but never flushed. They could wait in Netty's outbound
+  buffer until the next packet from Geyser, which may never come if the player stops moving. The freeze now ends
+  with a flush.
 - Disabling or reloading the extension while a player was shifted left the client in the shifted frame, and its
   next movement reached the server at the wrong height. The client now gets its real-space view back (cached chunks
   replayed at offset 0, snap to the real Y) before the pipeline is removed.

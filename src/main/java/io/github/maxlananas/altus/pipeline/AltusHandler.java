@@ -649,6 +649,11 @@ public final class AltusHandler extends ChannelDuplexHandler {
             }
         }
         state.lastSeenRealY = anchor;
+        // Released packets are only buffered by write(). Without a flush they would stay in Netty's outbound
+        // buffer until the next packet from Geyser, possibly never if the player stops moving.
+        if (self.channel().isActive()) {
+            self.flush();
+        }
     }
 
     /**
