@@ -19,6 +19,7 @@ import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -42,6 +43,12 @@ class AltusHandlerTest {
     /** Real Y above the top client edge margin (256 - 64 = 192): triggers a switch to offset 64. */
     private static final double HIGH_REAL_Y = 200;
     private static final int TARGET_OFFSET = 64;
+    /**
+     * Freeze length in the test clock. Netty's EmbeddedChannel runs every scheduled task that is due on each
+     * write, so a zero-length freeze would end inside the switch that started it. The clock is frozen (see
+     * Rig) and advanced explicitly, so the freeze lasts exactly as long as the test says.
+     */
+    private static final long FREEZE_MS = 500;
 
     /** Fixed-state player: the test controls what the pipeline can observe about the Geyser session. */
     private static final class FakeSession implements PlayerSession {
@@ -110,7 +117,7 @@ class AltusHandlerTest {
         boolean running = true;
 
         FakeSettings() {
-            config.freezeMs = 0; // unfreeze on the next scheduled-task run, so tests need no real time
+            config.freezeMs = FREEZE_MS;
         }
 
         @Override
@@ -148,6 +155,7 @@ class AltusHandlerTest {
             this.window = window;
             this.state = new AltusSession(() -> this.window, 64, 1 << 20);
             this.state.playerJavaId = PLAYER_ID;
+            channel.freezeTime(); // scheduled tasks run only when endFreeze() advances the clock
             channel.pipeline().addLast(MANAGER, new ChannelDuplexHandler());
             ChannelHandlerContext managerContext = channel.pipeline().context(MANAGER);
             this.handler = new AltusHandler(session, state, settings, diagnostics, managerContext);
@@ -163,6 +171,12 @@ class AltusHandlerTest {
         Object sendMove(ServerboundMovePlayerPosPacket packet) {
             channel.writeOutbound(packet);
             return channel.readOutbound();
+        }
+
+        /** Ends the freeze: advances the test clock past it and runs the scheduled unfreeze. */
+        void endFreeze() {
+            channel.advanceTimeBy(FREEZE_MS, TimeUnit.MILLISECONDS);
+            channel.runScheduledPendingTasks();
         }
 
         /** Drains every packet the handler forwarded to Geyser. */
@@ -230,7 +244,7 @@ class AltusHandlerTest {
         // be held while the freeze lasts, not sent.
         assertNull(rig.sendMove(rig.move(137)));
 
-        rig.channel.runScheduledPendingTasks(); // ends the freeze: held packets are flushed
+        rig.endFreeze(); // held packets are flushed
         assertFalse(rig.state.frozen);
         var replayed = (ServerboundMovePlayerPosPacket) rig.channel.readOutbound();
         assertEquals(HIGH_REAL_Y + 1, replayed.getY(), 1e-9,
@@ -245,7 +259,7 @@ class AltusHandlerTest {
 
         rig.sendMove(rig.move(HIGH_REAL_Y));
         rig.drainInbound(); // switch replay + snap at the shifted frame
-        rig.channel.runScheduledPendingTasks();
+        rig.endFreeze();
         assertEquals(TARGET_OFFSET, rig.state.offset);
 
         rig.channel.pipeline().remove(rig.handler);
@@ -267,11 +281,12 @@ class AltusHandlerTest {
         Rig rig = new Rig(windowNeeded());
         rig.sendMove(rig.move(HIGH_REAL_Y));
         rig.drainInbound();
-        rig.channel.runScheduledPendingTasks();
+        rig.endFreeze();
 
+        // Closing deregisters the channel, which removes the handler: handlerRemoved runs on a dead channel.
         rig.channel.close();
-        rig.channel.pipeline().remove(rig.handler);
 
+        assertFalse(rig.state.attached, "the handler was detached by the close");
         assertTrue(rig.drainInbound().isEmpty(), "a closed channel has no client to correct");
         assertTrue(rig.diagnostics.errors.isEmpty());
     }
@@ -315,7 +330,7 @@ class AltusHandlerTest {
         rig.session.spawned = false;
 
         rig.sendMove(rig.move(HIGH_REAL_Y));
-        rig.channel.runScheduledPendingTasks();
+        rig.endFreeze();
 
         assertEquals(TARGET_OFFSET, rig.state.offset, "the window still switches");
         assertTrue(rig.drainInbound().isEmpty(), "but a not-yet-spawned client is not snapped");
