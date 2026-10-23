@@ -27,7 +27,7 @@ snapshot Geyser depends on). Re-audit on every Geyser bump, following [CONTRIBUT
 | `ClientboundPlayerLookAtPacket` | y (target) | A | |
 | `ClientboundOpenSignEditorPacket` | position | A | |
 | `ClientboundSetDefaultSpawnPositionPacket` | global position | A | |
-| `ClientboundLoginPacket`, `ClientboundRespawnPacket` | - | New world: cache cleared, offset reset | The death location (`lastDeathPos`) is not shifted. Geyser stores it on the player entity and does not read it back: a code search of the Geyser default branch finds the name in three files, all setters or storage. Re-check on every Geyser bump. |
+| `ClientboundLoginPacket`, `ClientboundRespawnPacket` | - | New world: cache cleared, offset reset | The death location is written unshifted. Geyser's `setLastDeathPosition` writes it to the Bedrock player metadata (`PLAYER_LAST_DEATH_POS`). A search of the Geyser tree at `b2dab3c73` finds no Java reader of the stored value. Hauteur calls `startNewWorld`, which resets the offset, before forwarding these packets, so the value is in the real frame. A later switch does not rewrite it; the effect on the compass is untested. Re-check on every Geyser bump. |
 | `ClientboundMoveEntityPos/Rot/PosRot`, `ClientboundSetEntityMotionPacket` | delta or velocity | R | Shifting relative quantities desyncs entities. |
 | `ClientboundChunksBiomesPacket` | biome payload | Not windowed | Geyser does not read this packet. |
 | `ClientboundDebug*`, `ClientboundGameTestHighlightPosPacket`, `ClientboundTestInstanceBlockStatus`, `ClientboundMapItemDataPacket` | positions | Not windowed | Debug and test tooling, or no client-visible effect. Documented, not verified. |
