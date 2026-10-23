@@ -19,7 +19,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,7 +41,7 @@ jobs:
       - name: Build and test against Geyser ${{ env.GEYSER_VERSION }}
         run: |
           set +e
-          ./mvnw -B -ntp -Dmaven.repo.local="$RUNNER_TEMP/m2" \
+          ./mvnw -B -ntp \
               -Dgeyser.version="$GEYSER_VERSION" verify 2>&1 | tee mvn.log
           ec=${PIPESTATUS[0]}
           if [ "$ec" -ne 0 ]; then
@@ -79,7 +79,7 @@ jobs:
 
   publish:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write

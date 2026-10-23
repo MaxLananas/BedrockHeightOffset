@@ -231,7 +231,7 @@ public final class AltusCommand {
         if (session.getPlayerEntity() == null) {
             return 0;
         }
-        return (int) Math.round(session.getPlayerEntity().position().getY() + state.offset);
+        return Math.round(session.getPlayerEntity().position().getY() + state.offset);
     }
 
     private static String ok(boolean value) {
