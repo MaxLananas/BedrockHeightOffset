@@ -3,11 +3,14 @@
 
 Usage:
   surefire_summary.py [report-dir]              Markdown summary (for $GITHUB_STEP_SUMMARY).
-  surefire_summary.py --annotate [report-dir]   GitHub workflow commands: one notice with the totals,
-                                                and one error annotation per failing or erroring test.
+  surefire_summary.py --annotate [report-dir]   GitHub workflow commands: one notice with the totals, one
+                                                warning per unreadable report, and one error annotation per
+                                                failing or erroring test.
 
-Both modes exit 0 even when no reports exist, so they can run after a failed build; the build step carries
-the failure. The counts come straight from the XML written by Surefire, never from the console log.
+Both modes exit 0 when the reports cannot be read, so they can run after a failed build; the build step carries
+the failure. An unknown option is a usage error (exit 2). The counts come straight from the XML written by
+Surefire, never from the console log. A report that cannot be parsed (for example, truncated by a killed
+JVM) is named and left out of the totals, so the summary never hides that a suite did not finish.
 Annotations are readable through the check-run API even when the job logs are not.
 """
 import glob
@@ -17,41 +20,56 @@ import xml.etree.ElementTree as ET
 
 DEFAULT_DIR = "target/surefire-reports"
 COUNTERS = ("tests", "failures", "errors", "skipped")
+USAGE = "usage: surefire_summary.py [--annotate] [report-dir]"
 
 
-def load_suites(report_dir):
-    """Yields (suite element) for every TEST-*.xml, in name order."""
+def read_reports(report_dir):
+    """Returns (suites, unreadable): suites is [(path, root)], unreadable is [(path, reason)], both in name order."""
+    suites, unreadable = [], []
     for path in sorted(glob.glob(os.path.join(report_dir, "TEST-*.xml"))):
-        yield path, ET.parse(path).getroot()
+        try:
+            suites.append((path, ET.parse(path).getroot()))
+        except (ET.ParseError, OSError) as exc:
+            unreadable.append((path, str(exc)))
+    return suites, unreadable
+
+
+def counts_of(suite):
+    return {k: int(suite.get(k, "0")) for k in COUNTERS}
 
 
 def totals_of(suites):
     totals = {k: 0 for k in COUNTERS}
     for _, suite in suites:
-        for k in COUNTERS:
-            totals[k] += int(suite.get(k, "0"))
+        for k, v in counts_of(suite).items():
+            totals[k] += v
     return totals
 
 
+def md_cell(value):
+    """Escapes a Markdown table cell: a pipe would start a new column, a newline would end the row."""
+    return value.replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+
+
 def summary(report_dir):
+    suites, unreadable = read_reports(report_dir)
     lines = ["## Test results"]
-    suites = list(load_suites(report_dir))
-    if not suites:
+    if not suites and not unreadable:
         lines.append("No Surefire reports found (the build may have failed before tests ran).")
         return lines
     lines.append("| Suite | Tests | Failures | Errors | Skipped |")
     lines.append("|---|---:|---:|---:|---:|")
-    totals = {k: 0 for k in COUNTERS}
     for path, suite in suites:
-        counts = {k: int(suite.get(k, "0")) for k in COUNTERS}
-        for k in COUNTERS:
-            totals[k] += counts[k]
-        name = suite.get("name", os.path.basename(path))
-        lines.append(f"| `{name}` | {counts['tests']} | {counts['failures']} | {counts['errors']} | "
-                     f"{counts['skipped']} |")
-    lines.append(f"| **Total** | **{totals['tests']}** | **{totals['failures']}** | **{totals['errors']}** | "
-                 f"**{totals['skipped']}** |")
-    if totals["skipped"]:
+        c = counts_of(suite)
+        name = md_cell(suite.get("name", os.path.basename(path)))
+        lines.append(f"| `{name}` | {c['tests']} | {c['failures']} | {c['errors']} | {c['skipped']} |")
+    t = totals_of(suites)
+    lines.append(f"| **Total** | **{t['tests']}** | **{t['failures']}** | **{t['errors']}** | **{t['skipped']}** |")
+    for path, reason in unreadable:
+        lines.append("")
+        lines.append(f"> Unreadable report `{md_cell(os.path.basename(path))}` ({md_cell(reason)}). "
+                     "It is not in the totals above, so the run is incomplete.")
+    if t["skipped"]:
         lines.append("")
         lines.append("> Skipped tests are listed in the Surefire reports; each one must have a documented reason.")
     return lines
@@ -69,16 +87,18 @@ def escape_property(value):
 
 def annotations(report_dir):
     out = []
-    suites = list(load_suites(report_dir))
-    if not suites:
+    suites, unreadable = read_reports(report_dir)
+    if not suites and not unreadable:
         out.append("::warning title=Test results::No Surefire reports found; the build failed before tests ran.")
         return out
-    totals = totals_of(suites)
-    out.append(
-        "::notice title=Test results::"
-        + escape(f"{totals['tests']} tests, {totals['failures']} failures, {totals['errors']} errors, "
-                 f"{totals['skipped']} skipped")
-    )
+    t = totals_of(suites)
+    text = f"{t['tests']} tests, {t['failures']} failures, {t['errors']} errors, {t['skipped']} skipped"
+    if unreadable:
+        text += f"; {len(unreadable)} unreadable report(s) not counted"
+    out.append("::notice title=Test results::" + escape(text))
+    for path, reason in unreadable:
+        out.append("::warning title=Unreadable test report::"
+                   + escape(f"{os.path.basename(path)}: {reason}"))
     for _, suite in suites:
         for case in suite.iter("testcase"):
             for kind in ("failure", "error"):
@@ -93,13 +113,25 @@ def annotations(report_dir):
 
 
 def main(argv):
-    annotate = "--annotate" in argv
-    args = [a for a in argv if a != "--annotate"]
-    report_dir = args[0] if args else DEFAULT_DIR
-    if annotate:
-        print("\n".join(annotations(report_dir)))
-    else:
-        print("\n".join(summary(report_dir)))
+    annotate = False
+    positional = []
+    for arg in argv:
+        if arg in ("-h", "--help"):
+            print(__doc__)
+            return 0
+        if arg == "--annotate":
+            annotate = True
+        elif arg.startswith("-"):
+            print(f"unknown option: {arg}\n{USAGE}", file=sys.stderr)
+            return 2
+        else:
+            positional.append(arg)
+    if len(positional) > 1:
+        print(USAGE, file=sys.stderr)
+        return 2
+    report_dir = positional[0] if positional else DEFAULT_DIR
+    lines = annotations(report_dir) if annotate else summary(report_dir)
+    print("\n".join(lines))
     return 0
 
 
