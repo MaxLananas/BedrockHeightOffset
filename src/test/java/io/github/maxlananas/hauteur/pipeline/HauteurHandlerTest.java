@@ -134,11 +134,6 @@ class HauteurHandlerTest {
         public CommandYRewrite.Config commandConfig() {
             return new CommandYRewrite.Config(false, Set.of());
         }
-
-        @Override
-        public void reportQuarantinedType(String typeName, String reason) {
-            // Quarantine is asserted through the packet flow itself, not through this callback.
-        }
     }
 
     /** One wired pipeline plus the handles the scenarios inspect. */

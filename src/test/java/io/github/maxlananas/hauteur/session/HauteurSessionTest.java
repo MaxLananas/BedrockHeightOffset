@@ -2,11 +2,14 @@ package io.github.maxlananas.hauteur.session;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -97,5 +100,35 @@ class HauteurSessionTest {
         HauteurSession state = new HauteurSession(() -> null, 16, 1 << 20);
         state.refreshWindow();
         assertNull(state.window);
+    }
+
+    @Test
+    void quarantineIsPerSessionAndKeepsTheFirstError() {
+        HauteurSession first = new HauteurSession(() -> null, 64, 1 << 20);
+        HauteurSession second = new HauteurSession(() -> null, 64, 1 << 20);
+        first.recordQuarantine("ClientboundX", "inbound: first");
+        first.recordQuarantine("ClientboundX", "inbound: second");
+        assertEquals(Map.of("ClientboundX", "inbound: first"), first.quarantine());
+        assertTrue(second.quarantine().isEmpty(), "a different session must not inherit the quarantine");
+        assertThrows(UnsupportedOperationException.class, () -> first.quarantine().put("Other", "x"));
+    }
+
+    @Test
+    void statsBaselineSlotsAreDistinctAndInsideTheArray() {
+        int[] slots = {
+            HauteurSession.BASELINE_IN_TRANSLATED, HauteurSession.BASELINE_OUT_TRANSLATED,
+            HauteurSession.BASELINE_CHUNKS_WINDOWED, HauteurSession.BASELINE_CHUNK_REPLAYS,
+            HauteurSession.BASELINE_WINDOW_SWITCHES, HauteurSession.BASELINE_DROPPED_WHILE_FROZEN,
+            HauteurSession.BASELINE_CHUNK_ANOMALIES, HauteurSession.BASELINE_ACTIONS_HELD,
+            HauteurSession.BASELINE_HELD_OVERFLOW, HauteurSession.BASELINE_FREEZE_COUNT,
+            HauteurSession.BASELINE_FREEZE_NANOS, HauteurSession.BASELINE_CHUNKS_UNCACHEABLE,
+            HauteurSession.BASELINE_JOURNAL_OVERFLOWS, HauteurSession.BASELINE_TRANSFORM_FAILURES,
+            HauteurSession.BASELINE_RESET_MARK,
+        };
+        assertEquals(slots.length, Arrays.stream(slots).distinct().count(), "two counters share a slot");
+        HauteurSession state = new HauteurSession(() -> null, 64, 1 << 20);
+        for (int slot : slots) {
+            assertTrue(slot >= 0 && slot < state.statsBaseline.length, "slot " + slot + " is out of range");
+        }
     }
 }

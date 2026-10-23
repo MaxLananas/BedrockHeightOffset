@@ -162,4 +162,15 @@ class ChunkCacheTest {
         probe.put(chunk(0, 0, 1000));
         return probe.bytes();
     }
+
+    @Test
+    void nearestFirstTreatsNegativeChunksAsNeighbours() {
+        ChunkCache cache = new ChunkCache(64, 1 << 20);
+        cache.put(chunk(0, 0, 10));
+        cache.put(chunk(-1, 0, 10));
+        cache.put(chunk(-2, 0, 10));
+        // Block x = -1 lies in chunk -1 (floor division), so the order is -1, then 0, then -2.
+        List<Integer> order = cache.nearestFirst(-1, 0).stream().map(e -> e.packet().getX()).toList();
+        assertEquals(List.of(-1, 0, -2), order);
+    }
 }

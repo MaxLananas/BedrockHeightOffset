@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -66,7 +67,33 @@ public final class HauteurSession {
     /** Dropped-destroy positions remembered for an authoritative re-send; beyond this, the ghost is accepted. */
     public static final int GHOST_REVERT_LIMIT = 8;
 
+    /*
+     * Slots of statsBaseline, one per counter that /hauteur stats reset. A reset copies the current sum of each
+     * counter here; the displays show (sum - baseline). Slot BASELINE_RESET_MARK records that a reset happened.
+     */
+    public static final int BASELINE_IN_TRANSLATED = 0;
+    public static final int BASELINE_OUT_TRANSLATED = 1;
+    public static final int BASELINE_CHUNKS_WINDOWED = 2;
+    public static final int BASELINE_CHUNK_REPLAYS = 3;
+    public static final int BASELINE_WINDOW_SWITCHES = 4;
+    public static final int BASELINE_DROPPED_WHILE_FROZEN = 5;
+    public static final int BASELINE_CHUNK_ANOMALIES = 6;
+    public static final int BASELINE_ACTIONS_HELD = 7;
+    public static final int BASELINE_HELD_OVERFLOW = 8;
+    public static final int BASELINE_FREEZE_COUNT = 9;
+    public static final int BASELINE_FREEZE_NANOS = 10;
+    public static final int BASELINE_CHUNKS_UNCACHEABLE = 11;
+    public static final int BASELINE_JOURNAL_OVERFLOWS = 12;
+    public static final int BASELINE_TRANSFORM_FAILURES = 13;
+    public static final int BASELINE_RESET_MARK = 15;
+    private static final int BASELINE_SLOTS = 16;
+
     private final WindowConfigSource windowConfigSource;
+    /**
+     * Packet classes whose transform failed during this session, mapped to the first error. Quarantine is per
+     * session: a new connection starts with none, and /hauteur doctor reports this player's list only.
+     */
+    private final Map<String, String> quarantine = new ConcurrentHashMap<>();
 
     /** The downstream channel once attached; used to detach cleanly on disable/reload. */
     public volatile io.netty.channel.Channel channel;
@@ -114,8 +141,8 @@ public final class HauteurSession {
     public volatile long lastFreezeNanos;
     public final LongAdder freezeTotalNanos = new LongAdder();
     public final LongAdder freezeCount = new LongAdder();
-    /** Baselines captured by /hauteur stats reset; displays show (sum - baseline). */
-    public final long[] statsBaseline = new long[16];
+    /** Baselines captured by /hauteur stats reset; see the BASELINE_ constants. */
+    public final long[] statsBaseline = new long[BASELINE_SLOTS];
     public final LongAdder inTranslated = new LongAdder();
     public final LongAdder outTranslated = new LongAdder();
     public final LongAdder chunkWindowed = new LongAdder();
@@ -148,6 +175,16 @@ public final class HauteurSession {
 
     public void resetChunkCache() {
         chunkCache.clear();
+    }
+
+    /** Records a packet type that failed to transform. The first error for a type is kept. */
+    public void recordQuarantine(String typeName, String reason) {
+        quarantine.putIfAbsent(typeName, reason);
+    }
+
+    /** Packet types quarantined in this session, with their first error. A live, read-only view. */
+    public Map<String, String> quarantine() {
+        return Collections.unmodifiableMap(quarantine);
     }
 
     public synchronized void pushWatchLine(String line) {

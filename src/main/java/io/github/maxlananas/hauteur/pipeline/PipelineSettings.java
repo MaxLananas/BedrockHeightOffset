@@ -11,6 +11,4 @@ public interface PipelineSettings {
     HauteurConfig config();
 
     CommandYRewrite.Config commandConfig();
-
-    void reportQuarantinedType(String typeName, String reason);
 }

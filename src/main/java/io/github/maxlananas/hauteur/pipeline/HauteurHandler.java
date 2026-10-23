@@ -34,9 +34,11 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.Serv
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Single translation choke point for one Bedrock player. Installed on Geyser's Java-side pipeline directly
@@ -75,18 +77,22 @@ public final class HauteurHandler extends ChannelDuplexHandler {
     private final HeldQueue held;
     /** Serializes freeze transitions with outbound writes; see the class javadoc. */
     private final Object freezeLock = new Object();
+    /**
+     * Packet classes whose transform failed; written from the event loop and from the outbound path, which can run
+     * on another thread, hence a concurrent set created eagerly.
+     */
+    private final Set<Class<?>> quarantined = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean loggedTransformError = new AtomicBoolean();
     // Event-loop confined:
     private ChannelHandlerContext ctx;
-    private volatile Set<Class<?>> quarantined;
-    private boolean loggedTransformError;
 
     public HauteurHandler(PlayerSession session, HauteurSession state, PipelineSettings core,
                         Diagnostics logger, ChannelHandlerContext managerContext) {
-        this.session = java.util.Objects.requireNonNull(session);
-        this.state = java.util.Objects.requireNonNull(state);
-        this.core = java.util.Objects.requireNonNull(core);
-        this.logger = java.util.Objects.requireNonNull(logger);
-        this.managerContext = java.util.Objects.requireNonNull(managerContext);
+        this.session = Objects.requireNonNull(session);
+        this.state = Objects.requireNonNull(state);
+        this.core = Objects.requireNonNull(core);
+        this.logger = Objects.requireNonNull(logger);
+        this.managerContext = Objects.requireNonNull(managerContext);
         // Built here, not in the field initializer: the overflow lambda must capture a fully assigned state.
         this.held = new HeldQueue(HELD_QUEUE_LIMIT, state.heldOverflow::increment);
     }
@@ -152,8 +158,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             return;
         }
         try {
-            var q = quarantined;
-            if (q != null && q.contains(packet.getClass())) {
+            if (quarantined.contains(packet.getClass())) {
                 forwardUntranslatedOrDrop(ctx, packet);
                 return;
             }
@@ -314,8 +319,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             return;
         }
         try {
-            var q = quarantined;
-            if (q != null && q.contains(packet.getClass())) {
+            if (quarantined.contains(packet.getClass())) {
                 if (passesUntranslated()) {
                     ctx.write(packet, promise);
                 } else {
@@ -707,7 +711,10 @@ public final class HauteurHandler extends ChannelDuplexHandler {
      */
     private void replayWorld(HauteurSession.WindowConfig w, int target) {
         Vector3f p = session.playerPosition();
-        for (ChunkCache.Entry entry : state.chunkCache.nearestFirst((int) p.getX(), (int) p.getZ())) {
+        // Floor, not truncation: for x in (-1, 0) the truncated block coordinate would sort chunk 0 before chunk -1.
+        int blockX = (int) Math.floor(p.getX());
+        int blockZ = (int) Math.floor(p.getZ());
+        for (ChunkCache.Entry entry : state.chunkCache.nearestFirst(blockX, blockZ)) {
             try {
                 WindowedChunks.Outcome windowed = WindowedChunks.window(entry.packet(), w.chunkParams(target));
                 if (windowed.anomaly()) {
@@ -812,15 +819,11 @@ public final class HauteurHandler extends ChannelDuplexHandler {
     }
 
     private void quarantine(String direction, MinecraftPacket packet, Throwable t) {
-        // Event-loop or freeze-lock confined set; the first failure per class is remembered so a
-        // deterministic protocol breakage costs one exception per session per type, not one per packet.
-        if (quarantined == null) {
-            quarantined = ConcurrentHashMap.newKeySet();
-        }
+        // The first failure per class is remembered so a deterministic protocol breakage costs one exception per
+        // session per type, not one per packet. The record lives on this session, so a reconnect starts clean.
         if (quarantined.add(packet.getClass())) {
-            core.reportQuarantinedType(packet.getClass().getSimpleName(), direction + ": " + t);
-            if (!loggedTransformError) {
-                loggedTransformError = true;
+            state.recordQuarantine(packet.getClass().getSimpleName(), direction + ": " + t);
+            if (loggedTransformError.compareAndSet(false, true)) {
                 logger.error("[Hauteur] " + direction + " transform failed for "
                     + packet.getClass().getSimpleName() + "; packets of this type are dropped while the"
                     + " height window is active (fail closed)", t);
@@ -838,11 +841,12 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         }
     }
 
+    /** Short packet name for the watch log: {@code ClientboundLevelChunkWithLightPacket} becomes {@code LevelChunkWithLight}. */
     private static String shortName(MinecraftPacket packet) {
         String n = packet.getClass().getSimpleName();
         if (n.endsWith("Packet")) {
-            n = n.substring(0, n.length() - 6);
+            n = n.substring(0, n.length() - "Packet".length());
         }
-        return n.startsWith("Clientbound") ? n.substring(11) : n.startsWith("Serverbound") ? n.substring(11) : n;
+        return n.replaceFirst("^(Clientbound|Serverbound)", "");
     }
 }
