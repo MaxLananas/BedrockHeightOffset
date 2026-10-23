@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Hypso. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to Altus. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) for the extension's configuration,
 commands and jar name. The pinned Geyser build is listed in the README.
 
@@ -8,13 +8,14 @@ commands and jar name. The pinned Geyser build is listed in the README.
 
 Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSHOT`.
 
-### Renamed
+### Changed
 
-- The project is now **Hypso** (formerly SkyWindow). Jar: `hypso-<version>.jar`. Package:
-  `fr.buildtheearth.hypso`. Extension id: `hypso`. Command: `/hypso`.
-- Migration: `extensions/skywindow/config.properties` is copied to `extensions/hypso/` on first start (the old file
+- The project is now **Altus** (formerly SkyWindow). Jar: `altus-<version>.jar`. Package:
+  `io.github.maxlananas.altus`. Extension id: `altus`. Command: `/altus`.
+- Maven `groupId` is now `io.github.maxlananas` (it was `fr.buildtheearth` in 1.0.0). The repository name is unchanged.
+- Migration: `extensions/skywindow/config.properties` is copied to `extensions/altus/` on first start (the old file
   is kept). `/skywindow`, `/sw` and `/bho` remain as command aliases.
-- The repository name and the Maven `groupId` (`fr.buildtheearth`) are unchanged.
+- Licensed under the MIT License (see `LICENSE`).
 
 ### Fixed
 
@@ -37,12 +38,12 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 - Changes to the chunk-cache budget on reload did not apply to connected players, and re-enabling the extension
   did not attach connected players until they reconnected.
 - A packet type whose transform failed was passed through untranslated while the window was active. It is now
-  dropped (fail closed) and reported by `/hypso doctor`.
+  dropped (fail closed) and reported by `/altus doctor`.
 - Chunk-cache access from the session and reload threads was unsynchronized.
 
 ### Added
 
-- `/hypso stats` shows chunks that could not be replayed, journal overflows and transform failures.
+- `/altus stats` shows chunks that could not be replayed, journal overflows and transform failures.
 - Release workflow: tag and Maven version must match, the tagged commit must be on `main`, existing releases are
   verified rather than overwritten, and the jar and checksums are published together with build information.
 - Build workflow publishes the Surefire test summary on the job page.

@@ -14,6 +14,6 @@ function render(svgName, pngName, width) {
 }
 
 for (const size of [1024, 512, 128, 32]) {
-  render('hypso-logo.svg', `hypso-${size}.png`, size);
+  render('altus-logo.svg', `altus-${size}.png`, size);
 }
-render('hypso-logo-mono.svg', 'hypso-mono-512.png', 512);
+render('altus-logo-mono.svg', 'altus-mono-512.png', 512);

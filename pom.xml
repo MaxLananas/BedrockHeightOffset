@@ -4,13 +4,43 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>fr.buildtheearth</groupId>
-    <artifactId>hypso</artifactId>
+    <groupId>io.github.maxlananas</groupId>
+    <artifactId>altus</artifactId>
     <version>1.1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
-    <name>Hypso</name>
-    <description>Hypso: a Geyser extension that lets Bedrock players build at extreme Java-world heights without rubber-banding</description>
+    <name>Altus</name>
+    <description>Altus: a Geyser extension that lets Bedrock players build at extreme Java-world heights without rubber-banding</description>
+    <url>https://github.com/MaxLananas/BedrockHeightOffset</url>
+    <inceptionYear>2026</inceptionYear>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>MaxLananas</id>
+            <name>MaxLananas</name>
+            <url>https://github.com/MaxLananas</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <url>https://github.com/MaxLananas/BedrockHeightOffset</url>
+        <connection>scm:git:https://github.com/MaxLananas/BedrockHeightOffset.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/MaxLananas/BedrockHeightOffset.git</developerConnection>
+        <tag>HEAD</tag>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub Issues</system>
+        <url>https://github.com/MaxLananas/BedrockHeightOffset/issues</url>
+    </issueManagement>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -19,7 +49,7 @@
           Geyser build this extension compiles against. The extension runs inside the Geyser
           plugin's classloader (parent-first), so the shaded mcprotocollib / cloudburst-protocol /
           netty classes it provides are the exact runtime classes - they are compileOnly here and
-          never bundled. Bump together with the target Geyser build and re-run /hypso doctor.
+          never bundled. Bump together with the target Geyser build and re-run /altus doctor.
         -->
         <geyser.version>2.11.2-SNAPSHOT</geyser.version>
         <junit.version>5.11.4</junit.version>
@@ -60,7 +90,7 @@
     </dependencies>
 
     <build>
-        <finalName>hypso-${project.version}</finalName>
+        <finalName>altus-${project.version}</finalName>
         <resources>
             <!-- Single source of truth for the version: the pom. -->
             <resource>

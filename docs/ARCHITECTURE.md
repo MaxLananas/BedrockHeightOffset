@@ -24,7 +24,7 @@ realY   = clientY + O    (Java server)
 ## Pipeline position
 
 ```
-Java server  <->  [codec] -> [hypso: HypsoHandler] -> [manager] -> Geyser translators -> Bedrock
+Java server  <->  [codec] -> [altus: AltusHandler] -> [manager] -> Geyser translators -> Bedrock
 ```
 
 The handler sits directly after mcprotocollib's `codec` and before Geyser's `manager`. Inbound packets reach it
@@ -38,7 +38,7 @@ Geyser with `managerContext.fireChannelRead`, so they are not translated again.
 
 | Context | What runs | Shared state |
 |---|---|---|
-| Channel event loop | Inbound, window switches, freeze end, flush of held packets | `HypsoSession` fields are written here. |
+| Channel event loop | Inbound, window switches, freeze end, flush of held packets | `AltusSession` fields are written here. |
 | Geyser tick thread (or any thread) | Outbound `write` | Holds `freezeLock`, so it cannot interleave with a switch or a flush. Reads volatile fields. |
 | Session and reload threads | Disconnect, reload, sweeper | `ChunkCache` is synchronized, so `clear` and `resize` are safe. |
 
@@ -51,7 +51,7 @@ lock is.
 
 ## Window switch
 
-`HypsoHandler.performSwitch(realY, injectSnap, generation)`, under `freezeLock`:
+`AltusHandler.performSwitch(realY, injectSnap, generation)`, under `freezeLock`:
 
 1. Compute the target offset. Return if it equals the current offset, the world generation changed, or the
    pipeline is not active.
@@ -73,7 +73,7 @@ whether another switch is needed. A teleport that arrived during the freeze is t
   injected. The cooldown is bypassed, because the client is already at that position. A relative Y is a delta
   from the anchor.
 - **Client movement** (`MovePlayerPos`, `MovePlayerPosRot`). Subject to the margin and the cooldown.
-- **Operator** (`/hypso window`). Forced target, snap injected.
+- **Operator** (`/altus window`). Forced target, snap injected.
 
 ### Journal
 
@@ -139,10 +139,10 @@ block entities.
 | Exception during unfreeze | Held packets and ghost re-sends are discarded, the freeze is cleared, and the error is logged. |
 | Chunk does not fit the cache budget | Not cached, counted, replay skipped for it. |
 | Journal overflow | Chunk evicted, counted. |
-| Attach fails after retries | Session runs untranslated; `/hypso info` and `/hypso doctor` report it. |
-| World-manager wrap fails | Reported by `/hypso doctor`; collision and container reads may disagree with the window. |
+| Attach fails after retries | Session runs untranslated; `/altus info` and `/altus doctor` report it. |
+| World-manager wrap fails | Reported by `/altus doctor`; collision and container reads may disagree with the window. |
 
-Quarantined types are reported by `/hypso doctor` with the first error, so that a deterministic failure can be
+Quarantined types are reported by `/altus doctor` with the first error, so that a deterministic failure can be
 diagnosed.
 
 ## Lifecycle
@@ -161,11 +161,11 @@ diagnosed.
 
 `ShiftedWorldManager` wraps Geyser's `WorldManager`, so that direct, session-aware reads (collision correction,
 container checks, decorated pots) add the caller's offset. Installation is the only reflection point in the
-extension, and it is reported by `/hypso doctor`.
+extension, and it is reported by `/altus doctor`.
 
 ## What is not guaranteed
 
 - Client-side adoption of a frame is inferred from time and plausibility; Bedrock sends no acknowledgement that
-  Hypso can read.
+  Altus can read.
 - Whether a snap and the replayed terrain look correct on a real client.
 - Performance under load. Replays run on the event loop and have not been measured.

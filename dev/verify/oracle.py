@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hypso algorithm oracle.
+Altus algorithm oracle.
 
 This mirrors the pure logic in WindowRules.java / SectionCodec.java and then checks the SPEC
 (coverage, exact round-trips, pruning boundaries, switch cadence), so an implementation error shows

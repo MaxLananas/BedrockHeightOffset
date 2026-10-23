@@ -11,7 +11,7 @@ extension API. The rewrite question: where can *all* traffic be transformed once
 
 ## Decision
 
-Install `HypsoHandler` into Geyser's **upstream** (Java) channel — the mcprotocollib pipeline —
+Install `AltusHandler` into Geyser's **upstream** (Java) channel — the mcprotocollib pipeline —
 immediately after the `codec` handler (locate via `NetworkConstants.CODEC_NAME` / `MANAGER_NAME`,
 `addBefore`; retry with backoff while the session is still bootstrapping, mark degraded on
 giving up). That point sees: every decoded Java packet inbound (`channelRead`) and every Java

@@ -1,6 +1,6 @@
 # Contributing
 
-Hypso changes how Minecraft coordinates reach a production bridge. The bar for a change is that it is
+Altus changes how Minecraft coordinates reach a production bridge. The bar for a change is that it is
 provably inert when windowing is not needed, and provably correct when it is. Read
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PACKET-MATRIX.md](docs/PACKET-MATRIX.md) first.
 
@@ -15,7 +15,7 @@ provably inert when windowing is not needed, and provably correct when it is. Re
 
 1. **No new runtime dependencies.** Geyser's classloader provides netty, mcprotocollib and cloudburst math. The
    enforcer bans Bukkit, Spigot, Paper, ProtocolLib and Geyser-Spigot.
-2. **Configuration keys need three things:** a default in `HypsoConfig`, an entry in `sampleFileContents()` equal to
+2. **Configuration keys need three things:** a default in `AltusConfig`, an entry in `sampleFileContents()` equal to
    the default (a test checks this), and a row in the README table. Numeric keys get a clamp range.
 3. **Threading.** Per-session state is written on the channel event loop. Anything the outbound path reads is
    `volatile`. Freeze transitions and outbound writes run under `freezeLock`; do not add a path that changes
@@ -45,7 +45,7 @@ provably inert when windowing is not needed, and provably correct when it is. Re
 
 - Version bumps in `pom.xml` and the matching `## [X.Y.Z]` changelog section are merged through a normal pull
   request.
-- Tag only from `main`, with an annotated tag `vX.Y.Z`: `git tag -a vX.Y.Z -m "Hypso X.Y.Z"` then `git push origin vX.Y.Z`.
+- Tag only from `main`, with an annotated tag `vX.Y.Z`: `git tag -a vX.Y.Z -m "Altus X.Y.Z"` then `git push origin vX.Y.Z`.
 - The release workflow checks that the tag matches `pom.xml`, that the changelog section exists, and that the commit
   is on `main`. It publishes the jar, `SHA256SUMS.txt` and `build-info.txt`.
 - Releases are immutable. Re-running the workflow for the same tag is a no-op if the checksums match, and a failure
@@ -58,6 +58,6 @@ provably inert when windowing is not needed, and provably correct when it is. Re
 - [ ] `oracle.py` and `mvn verify` pass locally or in CI.
 - [ ] New packet types are classified in the code, in the matrix, and in the tests.
 - [ ] Nothing is shifted that is relative.
-- [ ] Failure paths fail closed and are visible in `/hypso doctor` or the logs.
+- [ ] Failure paths fail closed and are visible in `/altus doctor` or the logs.
 - [ ] Cross-thread state is listed in the class Javadoc and in `docs/ARCHITECTURE.md`.
 - [ ] README, CHANGELOG and `docs/VERIFICATION.md` reflect the change.

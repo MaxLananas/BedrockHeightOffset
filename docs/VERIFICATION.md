@@ -23,42 +23,42 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
   teleports (including the own-player `ClientboundPlayerPositionPacket`), identity at offset 0.
 - `translate/TransformPropertyTest`, `translate/WindowedChunksTest`, `translate/CommandYRewriteTest`: the Y
   shift is exact in both directions; relative quantities survive; chunk re-homing and block-entity pruning.
-- `session/HypsoSessionTest`, `window/WindowRulesTest`, `chunk/SectionCodec*Test`,
+- `session/AltusSessionTest`, `window/WindowRulesTest`, `chunk/SectionCodec*Test`,
   `pipeline/HeldQueueTest`: window math, codec tolerance and fuzzing, the held-queue contract.
-- `HypsoConfigTest`: clamping, strict booleans (`freeze-hold-actions=flase` is reported, not silently false),
+- `AltusConfigTest`: clamping, strict booleans (`freeze-hold-actions=flase` is reported, not silently false),
   sample file round trip.
 
 ### What the JUnit suite does not cover
 
-- `HypsoHandler` is not exercised end to end. Its tests would need a live `GeyserSession`, which cannot be
+- `AltusHandler` is not exercised end to end. Its tests would need a live `GeyserSession`, which cannot be
   constructed without a running Geyser. The switch, freeze, flush and ghost-revert logic is therefore verified by
   review and by the manual procedure below, not by automated tests. This is a known gap.
-- `SkyWindowCore` installation, the world-manager wrapper, and reload paths are not tested.
+- `AltusCore` installation, the world-manager wrapper, and reload paths are not tested.
 - No test runs a real packet stream through Geyser's translators.
 
 ## Manual procedure (not automated)
 
 Run on a staging server with a Bedrock client, before any public deployment. Record the Geyser build, the
-Minecraft Java and Bedrock versions, and the output of `/hypso doctor` and `/hypso stats` for each step.
+Minecraft Java and Bedrock versions, and the output of `/altus doctor` and `/altus stats` for each step.
 
-1. **Preflight.** Extended-height world (for example `min-y: -64`, `height: 2016`). `/hypso doctor` shows the
-   pipeline attached and the world manager wrapped. `/hypso info` near spawn shows offset 0.
-2. **Passive proof.** Vanilla-height world (`height: 384`). `/hypso stats` counters stay at zero after play.
+1. **Preflight.** Extended-height world (for example `min-y: -64`, `height: 2016`). `/altus doctor` shows the
+   pipeline attached and the world manager wrapped. `/altus info` near spawn shows offset 0.
+2. **Passive proof.** Vanilla-height world (`height: 384`). `/altus stats` counters stay at zero after play.
 3. **Teleport to altitude.** `/tp @s 0 1500 0` from Bedrock chat. Expect: no rubber-band, terrain visible at the
-   player's feet, `/hypso info` shows a new offset. Note whether the player's on-screen position is correct.
+   player's feet, `/altus info` shows a new offset. Note whether the player's on-screen position is correct.
 4. **Block edit then switch.** Place a block at client Y 500, climb about 300 blocks to force a switch. Expect the
    block to remain after the switch.
 5. **Block-entity edit then switch.** Edit a sign at altitude, climb to force a switch. Expect the text to remain.
 6. **Freeze interactions.** Dig and place blocks, open a sign, and edit a command block just before and during a
-   forced switch (`/hypso window <realY>`). Expect: no block appears at the wrong height, dropped digs are
-   re-sent, `/hypso stats` shows held and dropped counts.
+   forced switch (`/altus window <realY>`). Expect: no block appears at the wrong height, dropped digs are
+   re-sent, `/altus stats` shows held and dropped counts.
 7. **Movement across a switch.** Elytra or boat across a switch point. Expect no altitude jump after the snap.
 8. **Respawn and dimension change at altitude.** Die, respawn; use a Nether portal and return. Expect the offset
    to reset and the window to re-derive without an out-of-window jump.
 9. **Reload.** `/geyser reload` while a player is at altitude. Expect the player to stay playable; with
    `enabled: false`, the pipeline detaches without a reconnect.
 10. **Failure injection** (optional). Temporarily break a transform in a test build. Expect the affected packet type
-    to be quarantined and reported by `/hypso doctor`, and no packet in the wrong frame.
+    to be quarantined and reported by `/altus doctor`, and no packet in the wrong frame.
 11. **Performance.** Measure a switch with a full view distance (for example 24 chunks). Record replay time on the
     event loop. No figure is claimed in the documentation until this is measured.
 

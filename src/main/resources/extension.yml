@@ -1,6 +1,6 @@
-id: hypso
-name: Hypso
-main: fr.buildtheearth.hypso.HypsoExtension
+id: altus
+name: Altus
+main: io.github.maxlananas.altus.AltusExtension
 api: 2.11.0
 version: ${project.version}
-authors: [BuildTheEarth]
+authors: [MaxLananas]

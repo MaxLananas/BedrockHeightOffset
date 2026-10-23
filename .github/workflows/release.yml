@@ -53,7 +53,7 @@ jobs:
       - name: Checksums
         run: |
           set -euo pipefail
-          JAR="$(find target -maxdepth 1 -name 'hypso-*.jar' ! -name 'original-*' -print -quit)"
+          JAR="$(find target -maxdepth 1 -name 'altus-*.jar' ! -name 'original-*' -print -quit)"
           test -n "$JAR"
           ( cd target && sha256sum "$(basename "$JAR")" > SHA256SUMS.txt )
           cp "$JAR" .
@@ -71,7 +71,7 @@ jobs:
         with:
           name: release-candidate
           path: |
-            hypso-*.jar
+            altus-*.jar
             SHA256SUMS.txt
             build-info.txt
             release-notes.md
@@ -106,7 +106,7 @@ jobs:
             fi
           else
             gh release create "$TAG" --repo "$REPO" --verify-tag \
-              --title "Hypso $TAG" --notes-file release-notes.md \
-              hypso-*.jar SHA256SUMS.txt build-info.txt
+              --title "Altus $TAG" --notes-file release-notes.md \
+              altus-*.jar SHA256SUMS.txt build-info.txt
           fi
           gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name'

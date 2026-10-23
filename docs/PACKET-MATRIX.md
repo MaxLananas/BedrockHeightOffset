@@ -1,6 +1,6 @@
 # Packet matrix
 
-Every packet class in mcprotocollib that carries an absolute Y, or that Geyser reads a Y from, and what Hypso does
+Every packet class in mcprotocollib that carries an absolute Y, or that Geyser reads a Y from, and what Altus does
 with it. `A` = shifted by the offset, `R` = relative and never shifted, `-` = no absolute Y in this shape.
 
 Audited against Geyser `2.11.2-SNAPSHOT` (commit `b2dab3c73`) and MCProtocolLib `b77d50c3` (the 2026-07-09
