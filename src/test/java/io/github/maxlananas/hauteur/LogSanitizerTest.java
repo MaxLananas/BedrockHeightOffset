@@ -30,6 +30,24 @@ class LogSanitizerTest {
     }
 
     @Test
+    void bidiOverridesAndIsolatesCannotReorderALogLine() {
+        // U+202E (right-to-left override) and U+2066 (left-to-right isolate) are format characters: a gamertag
+        // can use them to make the rest of a log line display backwards.
+        assertEquals("a?b", LogSanitizer.playerName("a\u202Eb"));
+        assertEquals("a?b", LogSanitizer.playerName("a\u2066b"));
+    }
+
+    @Test
+    void lineAndParagraphSeparatorsAreNeutralised() {
+        assertEquals("a?b?c", LogSanitizer.playerName("a\u2028b\u2029c"));
+    }
+
+    @Test
+    void zeroWidthAndByteOrderMarksAreReplaced() {
+        assertEquals("a?b?c", LogSanitizer.playerName("a\u200Bb\uFEFFc"));
+    }
+
+    @Test
     void longNamesAreCutToTheLimit() {
         String name = "x".repeat(40);
         assertEquals("x".repeat(LogSanitizer.MAX_NAME_LENGTH), LogSanitizer.playerName(name));
