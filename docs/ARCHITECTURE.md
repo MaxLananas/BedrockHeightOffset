@@ -43,7 +43,7 @@ Geyser with `managerContext.fireChannelRead`, so they are not translated again.
 
 | Context | What runs | Shared state |
 |---|---|---|
-| Channel event loop | Inbound, window switches, freeze end, flush of held packets | `HauteurSession` fields are written here. |
+| Channel event loop | Inbound, window switches, freeze end, flush of held packets | The transition state of `HauteurSession` is written here, through its setters. |
 | Geyser tick thread (or any thread) | Outbound `write` | Holds `freezeLock`, so it cannot interleave with a switch or a flush. Reads volatile fields. |
 | Session and reload threads | Disconnect, reload, sweeper | `ChunkCache` is synchronized, so `clear` and `resize` are safe. |
 

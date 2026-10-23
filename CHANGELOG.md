@@ -25,6 +25,8 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
   readable when the job log is not.
 - The pipeline no longer depends on Geyser session types. It reads the session, settings and logger through
   small interfaces (`PlayerSession`, `PipelineSettings`, `Diagnostics`) with Geyser adapters. This is internal.
+- The per-player transition state (window offset, freeze flags and epoch, anchor) is private to `HauteurSession` and
+  read and written through accessors. This is internal.
 - Release jars are reproducible for a given tag: entry timestamps are taken from the tagged commit. A release built
   against a Geyser SNAPSHOT is flagged in the workflow log, because the snapshot can change under it.
 - Logo export: the Pillow dependency is pinned in `dev/release/requirements.txt` (13.0.0, Python 3.11 or later). With
