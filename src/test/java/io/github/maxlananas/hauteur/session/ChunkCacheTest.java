@@ -13,6 +13,9 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -173,4 +176,36 @@ class ChunkCacheTest {
         List<Integer> order = cache.nearestFirst(-1, 0).stream().map(e -> e.packet().getX()).toList();
         assertEquals(List.of(-1, 0, -2), order);
     }
+
+    @Test
+    void journalReadsAreSafeWhileBlocksArriveOnAnotherThread() throws Exception {
+        // Regression guard: a window switch reads entries while the channel records new block changes.
+        ChunkCache cache = new ChunkCache(64, 1L << 30);
+        cache.put(chunk(0, 0, 10));
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> writer = pool.submit(() -> {
+                for (int i = 0; i < 20_000; i++) {
+                    cache.recordBlock(block(i % 16, 64, (i / 16) % 16, i));
+                }
+                return null;
+            });
+            Future<?> reader = pool.submit(() -> {
+                for (int i = 0; i < 2_000; i++) {
+                    for (ChunkCache.Entry entry : cache.nearestFirst(0, 0)) {
+                        entry.blockChanges();
+                        entry.blockEntityChanges();
+                    }
+                }
+                return null;
+            });
+            writer.get();
+            reader.get();
+        } finally {
+            pool.shutdownNow();
+        }
+        // 16 x 16 distinct positions at y = 64: the journal keeps exactly one entry per position.
+        assertEquals(256, cache.nearestFirst(0, 0).get(0).blockChanges().size());
+    }
 }
+

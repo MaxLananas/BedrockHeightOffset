@@ -64,21 +64,35 @@ public final class ChunkCache {
             return packet;
         }
 
-        /** Latest block state per changed position, in real coordinates. */
-        public List<BlockChangeEntry> blockChanges() {
+        /**
+         * Latest block state per changed position, in real coordinates. The journal is read under the entry's own
+         * lock, because the cache lock does not cover a caller that reads an entry after {@code nearestFirst}
+         * returned it, and a block change may arrive on another thread meanwhile.
+         */
+        public synchronized List<BlockChangeEntry> blockChanges() {
             return new ArrayList<>(blockChanges.values());
         }
 
-        /** Latest block-entity data per position, in real coordinates. */
-        public List<ClientboundBlockEntityDataPacket> blockEntityChanges() {
+        /** Latest block-entity data per position, in real coordinates. Locked like {@link #blockChanges()}. */
+        public synchronized List<ClientboundBlockEntityDataPacket> blockEntityChanges() {
             return new ArrayList<>(blockEntityChanges.values());
         }
 
-        private int journalSize() {
+        /** Lock order is always cache, then entry; nothing in an entry calls back into the cache. */
+        private synchronized void journalBlock(Vector3i pos, BlockChangeEntry change) {
+            blockEntityChanges.remove(pos); // a new block state supersedes any block entity at that position
+            blockChanges.put(pos, change);
+        }
+
+        private synchronized void journalBlockEntity(Vector3i pos, ClientboundBlockEntityDataPacket update) {
+            blockEntityChanges.put(pos, update);
+        }
+
+        private synchronized int journalSize() {
             return blockChanges.size() + blockEntityChanges.size();
         }
 
-        private long bytes() {
+        private synchronized long bytes() {
             return baseBytes + journalSize() * JOURNAL_ENTRY_BYTES;
         }
     }
@@ -136,8 +150,7 @@ public final class ChunkCache {
             return Record.NOT_CACHED;
         }
         long before = entry.bytes();
-        entry.blockEntityChanges.remove(pos); // a new block state supersedes any block entity at that position
-        entry.blockChanges.put(pos, change);
+        entry.journalBlock(pos, change);
         return settle(key, entry, before);
     }
 
@@ -150,7 +163,7 @@ public final class ChunkCache {
             return Record.NOT_CACHED;
         }
         long before = entry.bytes();
-        entry.blockEntityChanges.put(pos, update);
+        entry.journalBlockEntity(pos, update);
         return settle(key, entry, before);
     }
 
