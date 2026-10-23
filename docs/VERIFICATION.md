@@ -26,7 +26,7 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
 - `session/HauteurSessionTest`, `window/WindowRulesTest`, `chunk/SectionCodec*Test`,
   `pipeline/HeldQueueTest`: window math, codec tolerance and fuzzing, the held-queue contract.
 - `LogSanitizerTest`: player-name sanitizing (control characters, cut length, surrogate-safe cut).
-- `HauteurConfigTest`: clamping, a malformed `\\u` escape reported as an I/O error (the extension keeps its
+- `HauteurConfigTest`: clamping, a malformed `\u` escape reported as an I/O error (the extension keeps its
   defaults), strict booleans (`freeze-hold-actions=flase` is reported, not silently false),
   sample file round trip.
 
