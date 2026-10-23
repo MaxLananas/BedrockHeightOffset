@@ -83,13 +83,13 @@ Minecraft Java and Bedrock versions, and the output of `/hauteur doctor` and `/h
 
 ## Measured: chunk codec throughput (synthetic, not a server measurement)
 
-`dev/bench/ReliceBench.java` times `SectionCodec.resliceTolerant` on generated 24-section overworld payloads
+`dev/bench/SectionCodecBench.java` times `SectionCodec.resliceTolerant` on generated 24-section overworld payloads
 (sparse: 4-bit blocks, singleton biomes; dense: 8-bit blocks, explicit biome palette). It checks that the
 generated payload parses with no anomaly before timing. Run it with a JDK 21:
 
 ```
-javac -d /tmp/bench/classes src/main/java/io/github/maxlananas/hauteur/chunk/SectionCodec.java dev/bench/ReliceBench.java
-java -cp /tmp/bench/classes ReliceBench 4000
+javac -d /tmp/bench/classes src/main/java/io/github/maxlananas/hauteur/chunk/SectionCodec.java dev/bench/SectionCodecBench.java
+java -cp /tmp/bench/classes SectionCodecBench 4000
 ```
 
 Result on the sandbox used for this branch: seven runs of 4000 iterations, ranges shown. The sandbox is

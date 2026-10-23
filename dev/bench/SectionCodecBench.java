@@ -3,7 +3,7 @@ import java.io.ByteArrayOutputStream;
 import java.util.Random;
 
 /** Synthetic benchmark of SectionCodec.resliceTolerant on realistic 24-section overworld payloads. */
-public final class ReliceBench {
+public final class SectionCodecBench {
     static void varint(ByteArrayOutputStream o, int v) {
         while ((v & ~0x7F) != 0) { o.write((v & 0x7F) | 0x80); v >>>= 7; }
         o.write(v);
