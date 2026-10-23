@@ -100,9 +100,9 @@ public final class HauteurHandler extends ChannelDuplexHandler {
     @Override
     public void handlerAdded(ChannelHandlerContext ctx) {
         this.ctx = ctx;
-        state.channel = ctx.channel();
-        state.attached = true;
-        state.degraded = false;
+        state.setChannel(ctx.channel());
+        state.setAttached(true);
+        state.setDegraded(false);
         // If the login phase already passed while attach() was still retrying, pick up the dimension
         // bounds now; the position packets that follow drive the rest.
         state.refreshWindow();
@@ -115,8 +115,8 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         } catch (Throwable t) {
             logger.error("[Hauteur] could not return the client to real height while detaching", t);
         }
-        state.attached = false;
-        state.channel = null;
+        state.setAttached(false);
+        state.setChannel(null);
         resetTransition();
         state.resetChunkCache();
     }
@@ -129,17 +129,17 @@ public final class HauteurHandler extends ChannelDuplexHandler {
      * so nothing is sent.
      */
     private void returnToRealSpace(ChannelHandlerContext ctx) {
-        HauteurSession.WindowConfig w = state.window;
-        if (state.offset == 0 || w == null || !w.needed() || !ctx.channel().isActive()) {
+        HauteurSession.WindowConfig w = state.window();
+        if (state.offset() == 0 || w == null || !w.needed() || !ctx.channel().isActive()) {
             return;
         }
         synchronized (freezeLock) {
-            double realY = state.lastSeenRealY;
+            double realY = state.lastSeenRealY();
             held.clearAndComplete(); // released before the snap: their promises complete, the frame is gone
             state.ghostRevertPositions.clear();
-            state.frozen = false;
-            state.offset = 0;
-            state.frozenFrameOffset = 0;
+            state.setFrozen(false);
+            state.setOffset(0);
+            state.setFrozenFrameOffset(0);
             if (session.hasPlayerEntity()) {
                 replayWorld(w, 0);
                 if (session.isSpawned()) {
@@ -171,7 +171,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
 
     private void handleInbound(ChannelHandlerContext ctx, MinecraftPacket packet) {
         if (packet instanceof ClientboundLoginPacket login) {
-            state.playerJavaId = login.getEntityId();
+            state.setPlayerJavaId(login.getEntityId());
             startNewWorld();
             ctx.fireChannelRead(login);
             return;
@@ -202,12 +202,12 @@ public final class HauteurHandler extends ChannelDuplexHandler {
                 position.getRelatives().contains(PositionElement.Y));
             return;
         }
-        if (packet instanceof ClientboundTeleportEntityPacket teleport && teleport.getId() == state.playerJavaId) {
+        if (packet instanceof ClientboundTeleportEntityPacket teleport && teleport.getId() == state.playerJavaId()) {
             inboundAuthoritative(ctx, packet, teleport.getPosition().getY(),
                 teleport.getRelatives().contains(PositionElement.Y));
             return;
         }
-        if (packet instanceof ClientboundEntityPositionSyncPacket sync && sync.getId() == state.playerJavaId) {
+        if (packet instanceof ClientboundEntityPositionSyncPacket sync && sync.getId() == state.playerJavaId()) {
             inboundAuthoritative(ctx, packet, sync.getPosition().getY(), false);
             return;
         }
@@ -219,15 +219,15 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         // Cache the ORIGINAL real-space payload whenever windowing applies, so a switch never re-queries the
         // server and never accumulates translation error. Where the real dimension already fits the client
         // window, nothing is cached and the feature stays idle.
-        HauteurSession.WindowConfig w = state.window;
+        HauteurSession.WindowConfig w = state.window();
         boolean applies = w != null && w.needed();
         if (applies && !state.chunkCache.put(chunk)) {
             state.chunkUncacheable.increment();
-            if (state.watch) {
+            if (state.watch()) {
                 watch("IN", "LevelChunkWithLight", "larger than the cache budget; not replayable on switch");
             }
         }
-        int offset = state.offset;
+        int offset = state.offset();
         if (offset != 0 && applies) {
             WindowedChunks.Outcome windowed = WindowedChunks.window(chunk, w.chunkParams(offset));
             if (windowed.anomaly()) {
@@ -235,7 +235,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             } else {
                 state.chunkWindowed.increment();
             }
-            if (state.watch) {
+            if (state.watch()) {
                 watch("IN", "LevelChunkWithLight", "resliced by " + offset
                     + (windowed.anomaly() ? " (normalized)" : ""));
             }
@@ -252,11 +252,11 @@ public final class HauteurHandler extends ChannelDuplexHandler {
      */
     private void inboundAuthoritative(ChannelHandlerContext ctx, MinecraftPacket packet, double rawY, boolean relativeY) {
         if (appliesToPlayer()) {
-            double realY = relativeY ? state.lastSeenRealY + rawY : rawY;
+            double realY = relativeY ? state.lastSeenRealY() + rawY : rawY;
             // A non-finite Y is never an anchor: it would poison the frame resolver and any later snap.
             if (Double.isFinite(realY)) {
                 synchronized (freezeLock) {
-                    state.lastSeenRealY = realY;
+                    state.setLastSeenRealY(realY);
                 }
                 requestSwitch(realY, true);
             }
@@ -265,7 +265,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
     }
 
     private void translateInbound(ChannelHandlerContext ctx, MinecraftPacket packet) {
-        int offset = state.offset;
+        int offset = state.offset();
         if (offset == 0 || !appliesToPlayer()) {
             ctx.fireChannelRead(packet);
             return;
@@ -273,7 +273,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         Object translated = InboundYTransforms.apply(packet, offset);
         if (translated != packet) {
             state.inTranslated.increment();
-            if (state.watch) {
+            if (state.watch()) {
                 watch("IN", shortName(packet), "y-" + offset);
             }
         }
@@ -282,7 +282,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
 
     /** Records block and block-entity changes in the chunk journal, in real coordinates, before translation. */
     private void journal(MinecraftPacket packet) {
-        HauteurSession.WindowConfig w = state.window;
+        HauteurSession.WindowConfig w = state.window();
         if (w == null || !w.needed()) {
             return;
         }
@@ -298,7 +298,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         }
         if (worst == ChunkCache.Record.EVICTED_JOURNAL_OVERFLOW) {
             state.journalOverflows.increment();
-            if (state.watch) {
+            if (state.watch()) {
                 watch("IN", shortName(packet), "chunk journal overflow; chunk evicted");
             }
         }
@@ -328,7 +328,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
                 return;
             }
             synchronized (freezeLock) {
-                if (state.frozen) {
+                if (state.frozen()) {
                     writeFrozen(ctx, packet, promise);
                 } else {
                     writeLive(ctx, packet, promise);
@@ -355,12 +355,12 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             writeMovement(ctx, posRot.getY(), promise, posRot, true);
             return;
         }
-        int offset = state.offset;
+        int offset = state.offset();
         if (offset != 0 && appliesToPlayer()) {
             Object translated = OutboundYTransforms.apply(packet, offset, core.commandConfig());
             if (translated != packet) {
                 state.outTranslated.increment();
-                if (state.watch) {
+                if (state.watch()) {
                     watch("OUT", shortName(packet), "y+" + offset);
                 }
             }
@@ -382,9 +382,9 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             dropForFailure(packet, promise);
             return;
         }
-        int offset = state.offset;
+        int offset = state.offset();
         double realY = clientY + offset;
-        state.lastSeenRealY = realY;
+        state.setLastSeenRealY(realY);
         // May switch inline. The packet is still written: its real Y was computed in the frame it was
         // sent in, so it is correct whether or not the switch happened.
         requestSwitch(realY, false);
@@ -396,7 +396,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             ? ((ServerboundMovePlayerPosRotPacket) packet).withY(realY)
             : ((ServerboundMovePlayerPosPacket) packet).withY(realY);
         state.outTranslated.increment();
-        if (state.watch) {
+        if (state.watch()) {
             watch("OUT", withRotation ? "MovePlayerPosRot" : "MovePlayerPos", "y+" + offset);
         }
         ctx.write(translated, promise);
@@ -419,7 +419,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
     private void holdOrDrop(MinecraftPacket packet, ChannelPromise promise, boolean blockAction, boolean enabled) {
         if (enabled && held.offer(new HeldQueue.Entry(packet, promise, blockAction))) {
             state.actionsHeld.increment();
-            if (state.watch) {
+            if (state.watch()) {
                 watch("OUT", shortName(packet), "held across switch");
             }
             return;
@@ -430,7 +430,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
     private void dropFrozen(MinecraftPacket packet, ChannelPromise promise) {
         state.droppedWhileFrozen.increment();
         recordGhost(packet);
-        if (state.watch) {
+        if (state.watch()) {
             watch("OUT", shortName(packet), "dropped across switch");
         }
         promise.trySuccess();
@@ -438,7 +438,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
 
     private void dropForFailure(MinecraftPacket packet, ChannelPromise promise) {
         state.transformFailures.increment();
-        if (state.watch) {
+        if (state.watch()) {
             watch("OUT", shortName(packet), "dropped: transform failure (fail closed)");
         }
         promise.trySuccess();
@@ -471,24 +471,24 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         if (!core.running() || !Double.isFinite(realY)) {
             return;
         }
-        HauteurSession.WindowConfig w = state.window;
-        if (w == null || !w.needed() || state.frozen) {
+        HauteurSession.WindowConfig w = state.window();
+        if (w == null || !w.needed() || state.frozen()) {
             return;
         }
         HauteurConfig config = core.config();
-        if (!WindowRules.shouldSwitch(realY, state.offset, w.clientMinY(), w.clientHeight(),
+        if (!WindowRules.shouldSwitch(realY, state.offset(), w.clientMinY(), w.clientHeight(),
             config.switchMarginBlocks, w.maxOffset())) {
             return;
         }
-        if (!authoritative && System.currentTimeMillis() - state.lastSwitchAtMs
-            < config.switchCooldownMs * Math.max(1, state.switchBackoff)) {
+        if (!authoritative && System.currentTimeMillis() - state.lastSwitchAtMs()
+            < config.switchCooldownMs * Math.max(1, state.switchBackoff())) {
             return;
         }
         ChannelHandlerContext self = ctx;
         if (self == null) {
             return;
         }
-        long generation = state.worldGeneration;
+        long generation = state.worldGeneration();
         if (self.channel().eventLoop().inEventLoop()) {
             performSwitch(realY, !authoritative, generation);
             return;
@@ -514,29 +514,29 @@ public final class HauteurHandler extends ChannelDuplexHandler {
     private void performSwitch(double realY, boolean injectSnap, long generation) {
         synchronized (freezeLock) {
             state.switchQueued.set(false);
-            HauteurSession.WindowConfig w = state.window;
+            HauteurSession.WindowConfig w = state.window();
             ChannelHandlerContext self = ctx;
             if (self == null || !self.channel().isActive() || !core.running() || w == null || !w.needed()
-                || state.frozen || generation != state.worldGeneration || !session.hasPlayerEntity()) {
+                || state.frozen() || generation != state.worldGeneration() || !session.hasPlayerEntity()) {
                 return;
             }
             HauteurConfig config = core.config();
             int target = WindowRules.targetOffset(realY, w.clientMinY(), w.clientHeight(), w.maxOffset());
-            int previous = state.offset;
+            int previous = state.offset();
             if (target == previous) {
                 return;
             }
             long now = System.currentTimeMillis();
-            long sinceLast = now - state.lastSwitchAtMs;
-            state.switchBackoff = sinceLast < config.switchCooldownMs * 4 ? Math.min(8, state.switchBackoff * 2) : 1;
+            long sinceLast = now - state.lastSwitchAtMs();
+            state.setSwitchBackoff(sinceLast < config.switchCooldownMs * 4 ? Math.min(8, state.switchBackoff() * 2) : 1);
 
-            long epoch = ++state.freezeEpoch;
-            state.frozen = true;
-            state.frozenFrameOffset = previous;
-            state.offset = target;
-            state.lastSeenRealY = realY;
-            state.switchStartNanos = System.nanoTime();
-            state.lastSwitchAtMs = now;
+            long epoch = state.nextFreezeEpoch();
+            state.setFrozen(true);
+            state.setFrozenFrameOffset(previous);
+            state.setOffset(target);
+            state.setLastSeenRealY(realY);
+            state.setSwitchStartNanos(System.nanoTime());
+            state.setLastSwitchAtMs(now);
             held.clearAndComplete();
             state.ghostRevertPositions.clear();
             state.windowSwitches.increment();
@@ -559,12 +559,12 @@ public final class HauteurHandler extends ChannelDuplexHandler {
     /** Operator-initiated exact-window move ({@code /hauteur window <realY>}); same machinery, given target. */
     public void forceWindow(double realY) {
         ChannelHandlerContext self = ctx;
-        HauteurSession.WindowConfig w = state.window;
+        HauteurSession.WindowConfig w = state.window();
         // The command validates its input too; this keeps the handler safe for any other caller.
         if (self == null || w == null || !Double.isFinite(realY) || realY < w.javaMinY() || realY >= w.javaMaxY()) {
             return;
         }
-        long generation = state.worldGeneration;
+        long generation = state.worldGeneration();
         if (self.channel().eventLoop().inEventLoop()) {
             performSwitch(realY, true, generation);
         } else {
@@ -583,11 +583,11 @@ public final class HauteurHandler extends ChannelDuplexHandler {
 
     private void unfreeze(long epoch) {
         synchronized (freezeLock) {
-            if (!state.frozen || epoch != state.freezeEpoch) {
+            if (!state.frozen() || epoch != state.freezeEpoch()) {
                 return;
             }
-            state.lastFreezeNanos = System.nanoTime() - state.switchStartNanos;
-            state.freezeTotalNanos.add(state.lastFreezeNanos);
+            state.setLastFreezeNanos(System.nanoTime() - state.switchStartNanos());
+            state.freezeTotalNanos.add(state.lastFreezeNanos());
             state.freezeCount.increment();
             ChannelHandlerContext self = ctx;
             try {
@@ -603,12 +603,12 @@ public final class HauteurHandler extends ChannelDuplexHandler {
                 held.clearAndComplete();
                 state.ghostRevertPositions.clear();
             } finally {
-                state.frozen = false;
+                state.setFrozen(false);
             }
         }
         // A teleport or switch request that arrived during the freeze was deferred; evaluate it now.
         if (appliesToPlayer()) {
-            requestSwitch(state.lastSeenRealY, false);
+            requestSwitch(state.lastSeenRealY(), false);
         }
     }
 
@@ -619,10 +619,10 @@ public final class HauteurHandler extends ChannelDuplexHandler {
      */
     private void flushHeld() {
         ChannelHandlerContext self = ctx;
-        int previous = state.frozenFrameOffset;
-        int current = state.offset;
-        double anchor = state.lastSeenRealY;
-        double bound = FrameResolver.travelBound(System.nanoTime() - state.switchStartNanos);
+        int previous = state.frozenFrameOffset();
+        int current = state.offset();
+        double anchor = state.lastSeenRealY();
+        double bound = FrameResolver.travelBound(System.nanoTime() - state.switchStartNanos());
         HeldQueue.Entry entry;
         while ((entry = held.poll()) != null) {
             Object raw = entry.packet();
@@ -662,7 +662,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
                 dropFrozen((MinecraftPacket) raw, entry.promise());
             }
         }
-        state.lastSeenRealY = anchor;
+        state.setLastSeenRealY(anchor);
         // Released packets are only buffered by write(). Without a flush they would stay in Netty's outbound
         // buffer until the next packet from Geyser, possibly never if the player stops moving.
         if (self.channel().isActive()) {
@@ -679,9 +679,9 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         if (state.ghostRevertPositions.isEmpty()) {
             return;
         }
-        HauteurSession.WindowConfig w = state.window;
-        int previous = state.frozenFrameOffset;
-        int current = state.offset;
+        HauteurSession.WindowConfig w = state.window();
+        int previous = state.frozenFrameOffset();
+        int current = state.offset();
         for (Vector3i raw : new ArrayList<>(state.ghostRevertPositions)) {
             if (w == null) {
                 break;
@@ -755,15 +755,15 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         // ClientboundTeleportEntityPacket for the player id is what Geyser maps to a TELEPORT MovePlayer for the
         // Bedrock client. It is not a server teleport, so it carries no teleport id and nothing is acknowledged.
         managerContext.fireChannelRead(new ClientboundTeleportEntityPacket(
-            state.playerJavaId, targetPos, Vector3d.ZERO, session.playerYaw(), session.playerPitch(), List.of(), true));
-        if (state.watch) {
+            state.playerJavaId(), targetPos, Vector3d.ZERO, session.playerYaw(), session.playerPitch(), List.of(), true));
+        if (state.watch()) {
             watch("IN", "SnapTeleport", "clientY=" + (int) clientY);
         }
     }
 
     private void refreshWindowIfDirty() {
-        if (state.windowDirty) {
-            state.windowDirty = false;
+        if (state.windowDirty()) {
+            state.setWindowDirty(false);
             state.refreshWindow();
         }
     }
@@ -774,17 +774,17 @@ public final class HauteurHandler extends ChannelDuplexHandler {
      */
     private void startNewWorld() {
         state.resetChunkCache();
-        state.worldGeneration++;
-        state.windowDirty = true;
+        state.nextWorldGeneration();
+        state.setWindowDirty(true);
         resetTransition();
     }
 
     private void resetTransition() {
         synchronized (freezeLock) {
-            state.frozen = false;
-            state.freezeEpoch++;
-            state.offset = 0;
-            state.frozenFrameOffset = 0;
+            state.setFrozen(false);
+            state.nextFreezeEpoch();
+            state.setOffset(0);
+            state.setFrozenFrameOffset(0);
             state.switchQueued.set(false);
             held.clearAndComplete(); // never leave Geyser's write futures hanging
             state.ghostRevertPositions.clear();
@@ -792,13 +792,13 @@ public final class HauteurHandler extends ChannelDuplexHandler {
     }
 
     private boolean appliesToPlayer() {
-        HauteurSession.WindowConfig w = state.window;
+        HauteurSession.WindowConfig w = state.window();
         return w != null && w.needed();
     }
 
     /** Whether a packet may pass untranslated: true only when the client is in real space already. */
     private boolean passesUntranslated() {
-        return state.offset == 0 || !appliesToPlayer();
+        return state.offset() == 0 || !appliesToPlayer();
     }
 
     private void forwardUntranslatedOrDrop(ChannelHandlerContext ctx, MinecraftPacket packet) {
@@ -832,9 +832,9 @@ public final class HauteurHandler extends ChannelDuplexHandler {
     }
 
     private void watch(String dir, String what, String note) {
-        if (state.watch) {
+        if (state.watch()) {
             try {
-                state.pushWatchLine(dir + " " + what + " " + note + " (offset " + state.offset + ")");
+                state.pushWatchLine(dir + " " + what + " " + note + " (offset " + state.offset() + ")");
             } catch (Throwable ignored) {
                 // diagnostics never affect the packet path
             }

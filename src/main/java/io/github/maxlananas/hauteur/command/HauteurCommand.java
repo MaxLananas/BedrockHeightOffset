@@ -57,11 +57,11 @@ public final class HauteurCommand {
             send(session, "§cHauteur is not tracking this session (extension disabled, or it joined before load).");
             return;
         }
-        HauteurSession.WindowConfig w = state.window;
+        HauteurSession.WindowConfig w = state.window();
         send(session,
-            "§bHauteur §7offset: §f" + state.offset + (state.offset == 0 ? " blocks §7(real space, no window)" : " blocks"),
-            "§bHauteur §7attached: §f" + state.attached + " §7| switching now: §f" + state.frozen
-                + (state.degraded ? " §c| DEGRADED: pipeline never attached" : ""),
+            "§bHauteur §7offset: §f" + state.offset() + (state.offset() == 0 ? " blocks §7(real space, no window)" : " blocks"),
+            "§bHauteur §7attached: §f" + state.attached() + " §7| switching now: §f" + state.frozen()
+                + (state.degraded() ? " §c| DEGRADED: pipeline never attached" : ""),
             "§bHauteur §7client Y range: §f" + (w == null ? "?" : w.clientMinY() + ".." + (w.clientMinY() + w.clientHeight())),
             "§bHauteur §7real Y range: §f" + (w == null ? "?" : w.javaMinY() + ".." + w.javaMaxY()),
             "§bHauteur §7your real Y: §f" + currentRealY(session, state),
@@ -84,7 +84,7 @@ public final class HauteurCommand {
             return;
         }
         if (args.length < 2) {
-            send(session, "§7Usage: §f/hauteur window <realY> §7(e.g. §f/hauteur window " + (state.window != null ? state.window.javaMaxY() - 400 : 1500) + "§7)");
+            send(session, "§7Usage: §f/hauteur window <realY> §7(e.g. §f/hauteur window " + (state.window() != null ? state.window().javaMaxY() - 400 : 1500) + "§7)");
             return;
         }
         double realY;
@@ -94,7 +94,7 @@ public final class HauteurCommand {
             send(session, "§cNot a number: " + args[1]);
             return;
         }
-        HauteurSession.WindowConfig w = state.window;
+        HauteurSession.WindowConfig w = state.window();
         if (w == null) {
             send(session, "§cDimension bounds not read yet; rejoin to refresh.");
             return;
@@ -126,7 +126,7 @@ public final class HauteurCommand {
             return;
         }
         boolean on = mode.equals("on");
-        state.watch = on;
+        state.setWatch(on);
         send(session, on
             ? "§aWatch on: §7every translated packet and switch is recorded; view with §f/hauteur recent§7."
             : "§aWatch off.");
@@ -167,12 +167,12 @@ public final class HauteurCommand {
         for (Map.Entry<String, String> e : quarantined.entrySet()) {
             send(session, "§c✗ §7" + e.getKey() + ": §f" + e.getValue());
         }
-        boolean pipelineLive = state.channel != null && state.channel.isActive()
-            && state.channel.pipeline().get(HauteurHandler.HANDLER_NAME) != null;
-        send(session, ok(state.attached && pipelineLive)
+        boolean pipelineLive = state.channel() != null && state.channel().isActive()
+            && state.channel().pipeline().get(HauteurHandler.HANDLER_NAME) != null;
+        send(session, ok(state.attached() && pipelineLive)
             + " §7pipeline handler: §f" + (pipelineLive ? "attached"
-                : state.attached ? "flagged attached but not in pipeline" : "not attached (degraded)"));
-        HauteurSession.WindowConfig w = state.window;
+                : state.attached() ? "flagged attached but not in pipeline" : "not attached (degraded)"));
+        HauteurSession.WindowConfig w = state.window();
         if (w == null) {
             send(session, "§c✗ dimension bounds not read yet; rejoin to refresh");
             return;
@@ -198,8 +198,8 @@ public final class HauteurCommand {
                     + w.clientMinY() + " content is clipped by the client itself (vanilla Geyser behaviour).");
             }
         }
-        send(session, ok(state.offset % 16 == 0) + " §7invariants: offset §f" + state.offset + " (section-aligned: " + (state.offset % 16 == 0) + ")"
-            + " §7(world gen §f" + state.worldGeneration + "§7, backoff §f" + state.switchBackoff + "§7)");
+        send(session, ok(state.offset() % 16 == 0) + " §7invariants: offset §f" + state.offset() + " (section-aligned: " + (state.offset() % 16 == 0) + ")"
+            + " §7(world gen §f" + state.worldGeneration() + "§7, backoff §f" + state.switchBackoff() + "§7)");
         send(session, "§7anomaly-normalized chunk payloads: §f"
             + (state.chunkAnomalies.sum() - state.statsBaseline[HauteurSession.BASELINE_CHUNK_ANOMALIES])
             + " §7(resets are yours, not the server's)");
@@ -235,8 +235,8 @@ public final class HauteurCommand {
             "§7chunks not replayable (over cache budget): §f" + since(state.chunkUncacheable, b, HauteurSession.BASELINE_CHUNKS_UNCACHEABLE)
                 + " §7| journal overflows (chunk evicted): §f" + since(state.journalOverflows, b, HauteurSession.BASELINE_JOURNAL_OVERFLOWS),
             "§7packets dropped on transform failure (fail closed): §f" + since(state.transformFailures, b, HauteurSession.BASELINE_TRANSFORM_FAILURES),
-            "§7freeze duration: §f" + freezeAvg + " §7| last: §f" + (state.lastFreezeNanos / 1_000L) + " µs",
-            "§7last frame used while frozen: §f" + state.frozenFrameOffset + " §7| now: §f" + state.offset);
+            "§7freeze duration: §f" + freezeAvg + " §7| last: §f" + (state.lastFreezeNanos() / 1_000L) + " µs",
+            "§7last frame used while frozen: §f" + state.frozenFrameOffset() + " §7| now: §f" + state.offset());
     }
 
     /** Copies every counter that {@code stats} displays into the baseline, so later reads show what happened since. */
@@ -267,7 +267,7 @@ public final class HauteurCommand {
         if (session.getPlayerEntity() == null) {
             return 0;
         }
-        return Math.round(session.getPlayerEntity().position().getY() + state.offset);
+        return Math.round(session.getPlayerEntity().position().getY() + state.offset());
     }
 
     private static String ok(boolean value) {

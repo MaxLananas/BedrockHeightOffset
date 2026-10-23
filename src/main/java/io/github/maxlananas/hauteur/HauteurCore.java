@@ -177,8 +177,8 @@ public final class HauteurCore implements PipelineSettings {
     private void detachAll() {
         for (Map.Entry<GeyserSession, HauteurSession> e : states.entrySet()) {
             HauteurSession state = e.getValue();
-            state.attached = false;
-            var channel = state.channel;
+            state.setAttached(false);
+            var channel = state.channel();
             if (channel != null && channel.isActive()) {
                 channel.eventLoop().execute(() -> {
                     if (channel.pipeline().get(HauteurHandler.HANDLER_NAME) != null) {
@@ -194,7 +194,7 @@ public final class HauteurCore implements PipelineSettings {
         for (Map.Entry<GeyserSession, HauteurSession> e : states.entrySet()) {
             GeyserSession session = e.getKey();
             HauteurSession state = e.getValue();
-            if (session.isClosed() || state.attached) {
+            if (session.isClosed() || state.attached()) {
                 continue;
             }
             state.refreshWindow();
@@ -223,7 +223,7 @@ public final class HauteurCore implements PipelineSettings {
     /** Manual exact-window move for {@code /hauteur window <realY>} (builder tooling). */
     public boolean forceWindow(GeyserSession session, double realY) {
         HauteurSession state = states.get(session);
-        var channel = state == null ? null : state.channel;
+        var channel = state == null ? null : state.channel();
         if (channel == null || !channel.isActive()) {
             return false;
         }
@@ -237,7 +237,7 @@ public final class HauteurCore implements PipelineSettings {
 
     public int currentOffset(GeyserSession session) {
         HauteurSession state = states.get(session);
-        return state == null ? 0 : state.offset;
+        return state == null ? 0 : state.offset();
     }
 
     public boolean worldManagerShifted() {
@@ -279,7 +279,7 @@ public final class HauteurCore implements PipelineSettings {
     }
 
     private void tryAttach(GeyserSession session, HauteurSession state, int attempt) {
-        if (!running || state.attached || session.isClosed()) {
+        if (!running || state.attached() || session.isClosed()) {
             return;
         }
         long delayMs = attempt < 10 ? 100L : 500L;
@@ -297,7 +297,7 @@ public final class HauteurCore implements PipelineSettings {
     }
 
     private void installOrRetry(GeyserSession session, HauteurSession state, int attempt) {
-        if (!running || state.attached || session.isClosed()) {
+        if (!running || state.attached() || session.isClosed()) {
             return;
         }
         if (attempt > 100) {

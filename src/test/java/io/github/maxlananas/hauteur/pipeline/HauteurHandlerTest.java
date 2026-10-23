@@ -149,7 +149,7 @@ class HauteurHandlerTest {
         Rig(HauteurSession.WindowConfig window) {
             this.window = window;
             this.state = new HauteurSession(() -> this.window, 64, 1 << 20);
-            this.state.playerJavaId = PLAYER_ID;
+            this.state.setPlayerJavaId(PLAYER_ID);
             channel.freezeTime(); // scheduled tasks run only when endFreeze() advances the clock
             channel.pipeline().addLast(MANAGER, new ChannelDuplexHandler());
             ChannelHandlerContext managerContext = channel.pipeline().context(MANAGER);
@@ -206,7 +206,7 @@ class HauteurHandlerTest {
         ServerboundMovePlayerPosPacket low = rig.move(10);
 
         assertSame(low, rig.sendMove(low));
-        assertEquals(0, rig.state.offset);
+        assertEquals(0, rig.state.offset());
         assertTrue(rig.drainInbound().isEmpty());
     }
 
@@ -217,8 +217,8 @@ class HauteurHandlerTest {
 
         // The triggering packet was sent in real space (offset 0 when written), so it passes unchanged.
         assertSame(trigger, rig.sendMove(trigger));
-        assertEquals(TARGET_OFFSET, rig.state.offset);
-        assertTrue(rig.state.frozen, "the switch freezes movement until the freeze ends");
+        assertEquals(TARGET_OFFSET, rig.state.offset());
+        assertTrue(rig.state.frozen(), "the switch freezes movement until the freeze ends");
         assertEquals(1, rig.state.windowSwitches.sum());
 
         List<Object> injected = rig.drainInbound();
@@ -240,7 +240,7 @@ class HauteurHandlerTest {
         assertNull(rig.sendMove(rig.move(137)));
 
         rig.endFreeze(); // held packets are flushed
-        assertFalse(rig.state.frozen);
+        assertFalse(rig.state.frozen());
         var replayed = (ServerboundMovePlayerPosPacket) rig.channel.readOutbound();
         assertEquals(HIGH_REAL_Y + 1, replayed.getY(), 1e-9,
             "the held packet is replayed at its real Y (137 + offset 64)");
@@ -255,12 +255,12 @@ class HauteurHandlerTest {
         rig.sendMove(rig.move(HIGH_REAL_Y));
         rig.drainInbound(); // switch replay + snap at the shifted frame
         rig.endFreeze();
-        assertEquals(TARGET_OFFSET, rig.state.offset);
+        assertEquals(TARGET_OFFSET, rig.state.offset());
 
         rig.channel.pipeline().remove(rig.handler);
 
-        assertEquals(0, rig.state.offset);
-        assertFalse(rig.state.attached);
+        assertEquals(0, rig.state.offset());
+        assertFalse(rig.state.attached());
         List<Object> onDetach = rig.drainInbound();
         assertEquals(2, onDetach.size(), "one chunk replay, then one snap");
         var replayedChunk = (ClientboundLevelChunkWithLightPacket) onDetach.get(0);
@@ -281,7 +281,7 @@ class HauteurHandlerTest {
         // Closing deregisters the channel, which removes the handler: handlerRemoved runs on a dead channel.
         rig.channel.close();
 
-        assertFalse(rig.state.attached, "the handler was detached by the close");
+        assertFalse(rig.state.attached(), "the handler was detached by the close");
         assertTrue(rig.drainInbound().isEmpty(), "a closed channel has no client to correct");
         assertTrue(rig.diagnostics.errors.isEmpty());
     }
@@ -292,7 +292,7 @@ class HauteurHandlerTest {
         ServerboundMovePlayerPosPacket high = rig.move(HIGH_REAL_Y);
 
         assertSame(high, rig.sendMove(high));
-        assertEquals(0, rig.state.offset);
+        assertEquals(0, rig.state.offset());
         assertEquals(0, rig.state.windowSwitches.sum());
         assertTrue(rig.drainInbound().isEmpty());
     }
@@ -304,7 +304,7 @@ class HauteurHandlerTest {
         ServerboundMovePlayerPosPacket high = rig.move(HIGH_REAL_Y);
 
         assertSame(high, rig.sendMove(high));
-        assertEquals(0, rig.state.offset);
+        assertEquals(0, rig.state.offset());
         assertTrue(rig.drainInbound().isEmpty());
     }
 
@@ -315,7 +315,7 @@ class HauteurHandlerTest {
         ServerboundMovePlayerPosPacket high = rig.move(HIGH_REAL_Y);
 
         assertSame(high, rig.sendMove(high));
-        assertEquals(0, rig.state.offset, "no entity, so no snap and no switch");
+        assertEquals(0, rig.state.offset(), "no entity, so no snap and no switch");
         assertTrue(rig.drainInbound().isEmpty());
     }
 
@@ -325,8 +325,8 @@ class HauteurHandlerTest {
 
         assertNull(rig.sendMove(rig.move(Double.NaN)), "no real Y can be derived, so nothing is sent");
         assertNull(rig.sendMove(rig.move(Double.POSITIVE_INFINITY)));
-        assertEquals(0, rig.state.offset);
-        assertEquals(0.0, rig.state.lastSeenRealY, "the anchor is unchanged");
+        assertEquals(0, rig.state.offset());
+        assertEquals(0.0, rig.state.lastSeenRealY(), "the anchor is unchanged");
         assertEquals(0, rig.state.windowSwitches.sum());
         assertTrue(rig.drainInbound().isEmpty());
     }
@@ -338,12 +338,12 @@ class HauteurHandlerTest {
         rig.handler.forceWindow(Double.NaN);
         rig.handler.forceWindow(Double.POSITIVE_INFINITY);
         rig.handler.forceWindow(400); // above javaMaxY (320)
-        assertEquals(0, rig.state.offset, "invalid targets never move the window or snap the client");
+        assertEquals(0, rig.state.offset(), "invalid targets never move the window or snap the client");
         assertTrue(rig.drainInbound().isEmpty());
 
         // Positive control: a valid target does move the window, so the rejections above are meaningful.
         rig.handler.forceWindow(HIGH_REAL_Y);
-        assertEquals(TARGET_OFFSET, rig.state.offset);
+        assertEquals(TARGET_OFFSET, rig.state.offset());
         assertEquals(1, rig.state.windowSwitches.sum());
     }
 
@@ -355,7 +355,7 @@ class HauteurHandlerTest {
         rig.sendMove(rig.move(HIGH_REAL_Y));
         rig.endFreeze();
 
-        assertEquals(TARGET_OFFSET, rig.state.offset, "the window still switches");
+        assertEquals(TARGET_OFFSET, rig.state.offset(), "the window still switches");
         assertTrue(rig.drainInbound().isEmpty(), "but a not-yet-spawned client is not snapped");
     }
 }

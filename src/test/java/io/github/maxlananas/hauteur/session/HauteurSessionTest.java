@@ -73,7 +73,7 @@ class HauteurSessionTest {
         HauteurSession state = new HauteurSession(
             () -> HauteurSession.WindowConfig.of(-64, 1952, -512, 1024, 0), 16, 1 << 20);
         state.refreshWindow();
-        assertTrue(state.window.needed());
+        assertTrue(state.window().needed());
         // cache starts empty and survives resets
         assertEquals(0, state.chunkCache.size());
         state.resetChunkCache();
@@ -87,19 +87,19 @@ class HauteurSessionTest {
             new AtomicReference<>(HauteurSession.WindowConfig.of(-64, 1952, -512, 1024, 0));
         HauteurSession state = new HauteurSession(next::get, 16, 1 << 20);
         state.refreshWindow();
-        assertTrue(state.window.needed());
+        assertTrue(state.window().needed());
 
         next.set(null);
         state.refreshWindow();
-        assertTrue(state.window.needed());
-        assertEquals(1440, state.window.maxOffset());
+        assertTrue(state.window().needed());
+        assertEquals(1440, state.window().maxOffset());
     }
 
     @Test
     void windowStaysUnsetUntilTheDimensionHasBeenReadOnce() {
         HauteurSession state = new HauteurSession(() -> null, 16, 1 << 20);
         state.refreshWindow();
-        assertNull(state.window);
+        assertNull(state.window());
     }
 
     @Test
@@ -131,4 +131,26 @@ class HauteurSessionTest {
             assertTrue(slot >= 0 && slot < state.statsBaseline.length, "slot " + slot + " is out of range");
         }
     }
+
+    @Test
+    void transitionAccessorsRoundTripAndCountersAdvance() {
+        HauteurSession state = new HauteurSession(() -> null, 8, 1 << 20);
+        state.setOffset(48);
+        state.setFrozen(true);
+        state.setLastSeenRealY(12.5);
+        assertEquals(48, state.offset());
+        assertTrue(state.frozen());
+        assertEquals(12.5, state.lastSeenRealY());
+
+        // The increments return the new value, as ++field did, and never repeat it.
+        long first = state.nextFreezeEpoch();
+        long second = state.nextFreezeEpoch();
+        assertEquals(first + 1, second);
+        assertEquals(second, state.freezeEpoch());
+
+        long gen = state.worldGeneration();
+        assertEquals(gen + 1, state.nextWorldGeneration());
+        assertEquals(gen + 1, state.worldGeneration());
+    }
 }
+

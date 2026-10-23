@@ -96,49 +96,49 @@ public final class HauteurSession {
     private final Map<String, String> quarantine = new ConcurrentHashMap<>();
 
     /** The downstream channel once attached; used to detach cleanly on disable/reload. */
-    public volatile io.netty.channel.Channel channel;
-    public volatile WindowConfig window;
+    private volatile io.netty.channel.Channel channel;
+    private volatile WindowConfig window;
     /**
      * True when the cached window snapshot may predate Geyser's own dimension setup: {@code ChunkUtils.loadDimension}
      * runs in the login/respawn translators, i.e. after this handler sees those packets. The window is therefore
      * re-derived at the next chunk or position packet, never trusted from the login packet itself.
      */
-    public volatile boolean windowDirty = true;
+    private volatile boolean windowDirty = true;
     /** Current height offset O: client Y = real Y - O. Written only by the window switch. */
-    public volatile int offset;
-    public volatile boolean attached;
+    private volatile int offset;
+    private volatile boolean attached;
     /** True from the flip of a window switch until its freeze ends. Outbound writes are held or dropped meanwhile. */
-    public volatile boolean frozen;
-    public volatile long lastSwitchAtMs;
-    public volatile boolean watch;
+    private volatile boolean frozen;
+    private volatile long lastSwitchAtMs;
+    private volatile boolean watch;
     /** Incremented on every freeze start and reset; a scheduled unfreeze acts only if its epoch is still current. */
-    public volatile long freezeEpoch;
+    private volatile long freezeEpoch;
     /** Offset the client's frame was built with when the current freeze started. */
-    public volatile int frozenFrameOffset;
+    private volatile int frozenFrameOffset;
     /**
      * Anchor for frame resolution: the player's last known real Y. It is set by the switch trigger (the
      * authoritative server position for teleports, the client's own position otherwise) and advanced by each
      * held packet that resolves.
      */
-    public volatile double lastSeenRealY;
+    private volatile double lastSeenRealY;
     /** Nanotime at which the current freeze started; bounds how far the player can plausibly have travelled. */
-    public volatile long switchStartNanos;
+    private volatile long switchStartNanos;
 
     /** Original chunks plus journaled block changes, for replay during a window switch. Synchronized internally. */
     public final ChunkCache chunkCache;
     public final Set<Vector3i> ghostRevertPositions = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Deque<String> watchRing = new ArrayDeque<>(WATCH_RING_LIMIT);
 
-    public volatile int playerJavaId = -1;
+    private volatile int playerJavaId = -1;
     public final AtomicBoolean switchQueued = new AtomicBoolean();
     /** True after attach exhausted its retries: the session runs untranslated; surfaced in info/doctor. */
-    public volatile boolean degraded;
+    private volatile boolean degraded;
     /** Incremented on login/respawn; a switch or ghost queued before a world change must not act on the new world. */
-    public volatile long worldGeneration;
+    private volatile long worldGeneration;
     /** Cooldown multiplier (1..8) while switches keep arriving back-to-back (anti oscillation storm). */
-    public volatile int switchBackoff = 1;
+    private volatile int switchBackoff = 1;
     /** Last completed freeze duration, and running totals for the stats view. */
-    public volatile long lastFreezeNanos;
+    private volatile long lastFreezeNanos;
     public final LongAdder freezeTotalNanos = new LongAdder();
     public final LongAdder freezeCount = new LongAdder();
     /** Baselines captured by /hauteur stats reset; see the BASELINE_ constants. */
@@ -155,6 +155,144 @@ public final class HauteurSession {
     public final LongAdder chunkUncacheable = new LongAdder();
     public final LongAdder journalOverflows = new LongAdder();
     public final LongAdder transformFailures = new LongAdder();
+
+    // Accessors. Writers are the handler (transitions, on the channel's event loop, under freezeLock), HauteurCore
+    // (attach and detach, and the reload path) and the watch command. The fields are volatile, so readers see the
+    // latest value, but a setter is not a lock: multi-field transitions still need freezeLock.
+
+    public io.netty.channel.Channel channel() {
+        return channel;
+    }
+
+    public void setChannel(io.netty.channel.Channel value) {
+        this.channel = value;
+    }
+
+    public WindowConfig window() {
+        return window;
+    }
+
+    public boolean windowDirty() {
+        return windowDirty;
+    }
+
+    public void setWindowDirty(boolean value) {
+        this.windowDirty = value;
+    }
+
+    public int offset() {
+        return offset;
+    }
+
+    public void setOffset(int value) {
+        this.offset = value;
+    }
+
+    public boolean attached() {
+        return attached;
+    }
+
+    public void setAttached(boolean value) {
+        this.attached = value;
+    }
+
+    public boolean frozen() {
+        return frozen;
+    }
+
+    public void setFrozen(boolean value) {
+        this.frozen = value;
+    }
+
+    public long lastSwitchAtMs() {
+        return lastSwitchAtMs;
+    }
+
+    public void setLastSwitchAtMs(long value) {
+        this.lastSwitchAtMs = value;
+    }
+
+    public boolean watch() {
+        return watch;
+    }
+
+    public void setWatch(boolean value) {
+        this.watch = value;
+    }
+
+    public long freezeEpoch() {
+        return freezeEpoch;
+    }
+
+    public int frozenFrameOffset() {
+        return frozenFrameOffset;
+    }
+
+    public void setFrozenFrameOffset(int value) {
+        this.frozenFrameOffset = value;
+    }
+
+    public double lastSeenRealY() {
+        return lastSeenRealY;
+    }
+
+    public void setLastSeenRealY(double value) {
+        this.lastSeenRealY = value;
+    }
+
+    public long switchStartNanos() {
+        return switchStartNanos;
+    }
+
+    public void setSwitchStartNanos(long value) {
+        this.switchStartNanos = value;
+    }
+
+    public int playerJavaId() {
+        return playerJavaId;
+    }
+
+    public void setPlayerJavaId(int value) {
+        this.playerJavaId = value;
+    }
+
+    public boolean degraded() {
+        return degraded;
+    }
+
+    public void setDegraded(boolean value) {
+        this.degraded = value;
+    }
+
+    public long worldGeneration() {
+        return worldGeneration;
+    }
+
+    public int switchBackoff() {
+        return switchBackoff;
+    }
+
+    public void setSwitchBackoff(int value) {
+        this.switchBackoff = value;
+    }
+
+    public long lastFreezeNanos() {
+        return lastFreezeNanos;
+    }
+
+    public void setLastFreezeNanos(long value) {
+        this.lastFreezeNanos = value;
+    }
+
+    /** Next freeze epoch. Called under freezeLock only. */
+    public long nextFreezeEpoch() {
+        return ++freezeEpoch;
+    }
+
+    /** Next world generation. Synchronised: it is bumped from login/respawn and read by queued work. */
+    public synchronized long nextWorldGeneration() {
+        return ++worldGeneration;
+    }
 
     public HauteurSession(WindowConfigSource windowConfigSource, int maxChunks, long maxBytes) {
         this.windowConfigSource = windowConfigSource;
