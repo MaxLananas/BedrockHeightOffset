@@ -109,6 +109,17 @@ class HauteurConfigTest {
     }
 
     @Test
+    void malformedEscapeIsAnIoErrorNotARuntimeCrash(@TempDir Path dir) throws Exception {
+        // Properties.load throws IllegalArgumentException on a bad \\u escape. The core only handles IOException,
+        // so the parser must translate it, or a single typo would stop the extension from starting.
+        Path file = dir.resolve("config.properties");
+        Files.writeString(file, "freeze-ms=\\uZZZZ\n", StandardCharsets.UTF_8);
+        java.io.IOException e = assertThrows(java.io.IOException.class, () -> HauteurConfig.load(file));
+        assertTrue(e.getMessage().contains("malformed configuration"), e.getMessage());
+        assertTrue(e.getCause() instanceof IllegalArgumentException, "the cause is kept for the log");
+    }
+
+    @Test
     void freezeHoldActionsFalseIsHonoured(@TempDir Path dir) throws Exception {
         HauteurConfig c = parse(dir, "freeze-hold-actions=false\n");
         assertFalse(c.freezeHoldActions);

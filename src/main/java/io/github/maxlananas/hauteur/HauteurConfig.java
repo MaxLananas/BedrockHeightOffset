@@ -54,6 +54,10 @@ public final class HauteurConfig {
         Properties props = new Properties();
         try (InputStream in = Files.newInputStream(file)) {
             props.load(in);
+        } catch (IllegalArgumentException e) {
+            // Properties.load throws this for a malformed unicode escape. That is a bad file, not a programming
+            // error: report it as an I/O failure so the core falls back to defaults instead of failing to start.
+            throw new IOException("malformed configuration " + file + ": " + e.getMessage(), e);
         }
         List<String> warnings = new java.util.ArrayList<>();
         warnUnknownKeys(props, warnings);
