@@ -6,7 +6,8 @@ provably inert when windowing is not needed, and provably correct when it is. Re
 
 ## Environment
 
-- JDK 21 and Maven 3.9+. Python 3 for the oracle (no dependencies).
+- JDK 21. Maven is provided by the wrapper (`./mvnw`, Maven 3.9.11); a local Maven 3.9+ also works. Python 3 for the
+  oracle (no dependencies).
 - `python3 dev/verify/oracle.py 5` and `./mvnw -B verify` must both pass. CI runs them on every push.
 - Maven resolves Geyser `api` and `core` from the OpenGeyser repository (`geyser.version` in `pom.xml`). A change
   that needs a newer Geyser API bumps the pin in the same pull request and re-runs the packet-matrix audit.

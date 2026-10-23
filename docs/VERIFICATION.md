@@ -25,6 +25,7 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
   shift is exact in both directions; relative quantities survive; chunk re-homing and block-entity pruning.
 - `session/AltusSessionTest`, `window/WindowRulesTest`, `chunk/SectionCodec*Test`,
   `pipeline/HeldQueueTest`: window math, codec tolerance and fuzzing, the held-queue contract.
+- `LogSanitizerTest`: player-name sanitizing (control characters, cut length, surrogate-safe cut).
 - `AltusConfigTest`: clamping, strict booleans (`freeze-hold-actions=flase` is reported, not silently false),
   sample file round trip.
 
@@ -70,4 +71,8 @@ Minecraft Java and Bedrock versions, and the output of `/altus doctor` and `/alt
 
 - No measured performance figures.
 - No validation with a real Bedrock client has been recorded for this version.
-- The Maven Wrapper is not checked in; CI uses the Maven installed on the runner.
+- The Maven distribution downloaded by `./mvnw` is not pinned by a checksum yet (`distributionSha256Sum` is unset).
+  Pin it from the Apache release files before the first public release.
+- Test counts are read from the Surefire XML on each run and published as a check-run annotation. The last green
+  run on `80ba465` (build run 40019275713, push) reported 126 tests, 0 failures, 0 errors, 0 skipped. This is the
+  only test count this document relies on; it changes with every test added.

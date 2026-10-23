@@ -33,7 +33,7 @@ Status: **experimental**. The translation logic is covered by automated tests an
 | Component | Version | Status |
 |---|---|---|
 | Java | 21 | Used by CI (Temurin 21). |
-| Maven | 3.9+ | Used by CI. A Maven Wrapper is not provided yet. |
+| Maven | 3.9.11 | Provided by the Maven Wrapper (`./mvnw`); CI and release use it. A local Maven 3.9+ also works. |
 | Geyser | `2.11.2-SNAPSHOT` (`geyser.version` in `pom.xml`) | The API surface in use was checked against the Geyser and MCProtocolLib sources of that snapshot. |
 | Server | A Geyser-supported platform (Spigot/Paper, Fabric, Velocity, BungeeCord, standalone) | Windowing is exercised by automated tests only. No live server has been tested for any platform. |
 | Bedrock client | Current release | Not tested in this repository. |
