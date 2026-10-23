@@ -82,5 +82,6 @@ Minecraft Java and Bedrock versions, and the output of `/altus doctor` and `/alt
 - The Maven distribution downloaded by `./mvnw` is not pinned by a checksum yet (`distributionSha256Sum` is unset).
   Pin it from the Apache release files before the first public release.
 - Test counts are read from the Surefire XML on each run and published as a check-run annotation. The last green
-  run on `80ba465` (build run 40019275713, push) reported 126 tests, 0 failures, 0 errors, 0 skipped. This is the
-  only test count this document relies on; it changes with every test added.
+  run on `531b89e` (build runs 40022642524 for the pull request and 40022635460 for the push) reported 139 tests,
+  0 failures, 0 errors, 0 skipped. This is the only test count this document relies on; it changes with every test
+  added.
