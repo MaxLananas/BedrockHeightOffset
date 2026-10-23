@@ -78,7 +78,6 @@ public final class HauteurCore implements PipelineSettings {
                 Files.writeString(file, HauteurConfig.sampleFileContents());
             }
             config = HauteurConfig.load(file);
-            commandConfig = deriveCommandConfig(config);
         } catch (IOException e) {
             extension.logger().warning("[Hauteur] could not read " + file + ", using defaults: " + e.getMessage());
             config = HauteurConfig.loadDefault();
