@@ -10,7 +10,7 @@ snapshot Geyser depends on). Re-audit on every Geyser bump, following [CONTRIBUT
 
 | Packet | Field(s) | Action | Note |
 |---|---|---|---|
-| `ClientboundLevelChunkWithLightPacket` | chunk payload | Re-home sections (`WindowedChunks`) | Original cached; light arrays not re-homed (Geyser does not read them). |
+| `ClientboundLevelChunkWithLightPacket` | chunk payload | Re-home sections (`WindowedChunks`) | Original cached; light arrays not re-homed. A code search of the Geyser default branch finds no reference to `LightUpdateData` in Geyser core, while it finds `getChunkData` in the chunk translator. |
 | `ClientboundForgetLevelChunkPacket` | x, z | Cache eviction | No Y. |
 | `ClientboundBlockUpdatePacket` | entry position | A; journaled | |
 | `ClientboundSectionBlocksUpdatePacket` | entries; `chunkY` | A entries; `chunkY` -= offset/16; journaled | |
@@ -27,7 +27,7 @@ snapshot Geyser depends on). Re-audit on every Geyser bump, following [CONTRIBUT
 | `ClientboundPlayerLookAtPacket` | y (target) | A | |
 | `ClientboundOpenSignEditorPacket` | position | A | |
 | `ClientboundSetDefaultSpawnPositionPacket` | global position | A | |
-| `ClientboundLoginPacket`, `ClientboundRespawnPacket` | - | New world: cache cleared, offset reset | |
+| `ClientboundLoginPacket`, `ClientboundRespawnPacket` | - | New world: cache cleared, offset reset | The death location (`lastDeathPos`) is not shifted. Geyser stores it on the player entity and does not read it back: a code search of the Geyser default branch finds the name in three files, all setters or storage. Re-check on every Geyser bump. |
 | `ClientboundMoveEntityPos/Rot/PosRot`, `ClientboundSetEntityMotionPacket` | delta or velocity | R | Shifting relative quantities desyncs entities. |
 | `ClientboundChunksBiomesPacket` | biome payload | Not windowed | Geyser does not read this packet. |
 | `ClientboundDebug*`, `ClientboundGameTestHighlightPosPacket`, `ClientboundTestInstanceBlockStatus`, `ClientboundMapItemDataPacket` | positions | Not windowed | Debug and test tooling, or no client-visible effect. Documented, not verified. |

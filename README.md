@@ -104,8 +104,11 @@ These are current, tested-or-documented facts, not promises:
 - **Chunks above the cache budget are not replayed.** A chunk larger than `chunk-cache-max-megabytes` on its
   own is not cached. After a switch it is missing until the server sends it again. A chunk whose block-change
   journal exceeds 4096 positions is evicted for the same reason.
-- **Light data is not re-homed.** Geyser does not read light updates, so this does not affect Bedrock output,
-  but the data is kept with the chunk and counted against the budget.
+- **Light data is not re-homed.** Geyser's core has no reference to light updates in a code search of its default
+  branch, so this should not affect Bedrock output. That is evidence, not a live test, and it is re-checked on every
+  Geyser bump. The data is kept with the chunk and counted against the budget.
+- **Death location is not shifted.** Geyser stores it on the player and does not read it back (same evidence and
+  caveat). The respawn screen and compass are therefore not expected to change.
 - **World reads for collision and containers depend on the wrapper.** If the world-manager wrapper cannot be
   installed, `/hauteur doctor` reports it, and direct world reads inside Geyser may disagree with the window.
 - **Not translated:** packets without an absolute Y (the server's own `ChunksBiomes` payload is ignored by
