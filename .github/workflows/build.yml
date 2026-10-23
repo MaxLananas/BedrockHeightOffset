@@ -34,10 +34,26 @@ jobs:
         run: python3 dev/verify/oracle.py 5
       - name: Logo sources match their generator
         run: python3 dev/release/logo.py --check
+      - name: Python tooling tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s dev/verify -p 'test_*.py' -v
+          python3 -m unittest discover -s dev/release -p 'test_*.py' -v
+      - name: Benchmark compiles and runs (smoke, not a measurement)
+        # The timing run is manual (docs/VERIFICATION.md). CI only proves the benchmark still builds and that
+        # its synthetic payloads still parse without anomaly.
+        run: |
+          set -euo pipefail
+          javac -d "$RUNNER_TEMP/bench" src/main/java/io/github/maxlananas/hauteur/chunk/SectionCodec.java dev/bench/SectionCodecBench.java
+          java -cp "$RUNNER_TEMP/bench" SectionCodecBench 50
       - name: Build and test against Geyser ${{ env.GEYSER_VERSION }}
         run: |
           set +e
-          ./mvnw -B -ntp \
+          # On the weekly run, -U makes Maven re-resolve the SNAPSHOT: that is the drift probe. Push and pull
+          # request runs keep Maven's default snapshot policy (at most one remote check a day).
+          UPDATE=""
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then UPDATE="-U"; fi
+          ./mvnw -B -ntp $UPDATE \
               -Dgeyser.version="$GEYSER_VERSION" verify 2>&1 | tee mvn.log
           ec=${PIPESTATUS[0]}
           if [ "$ec" -ne 0 ]; then
