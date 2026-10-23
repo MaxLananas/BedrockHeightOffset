@@ -36,6 +36,27 @@ class AltusSessionTest {
     }
 
     @Test
+    void overrideAboveTheUsefulMaximumIsClampedToIt() {
+        // floorToSection(1952 + 512 - 1024) = 1440: an override cannot raise the offset past it
+        AltusSession.WindowConfig w = AltusSession.WindowConfig.of(-64, 1952, -512, 1024, 99_999);
+        assertTrue(w.needed());
+        assertEquals(1440, w.maxOffset());
+    }
+
+    @Test
+    void windowingStaysOffWhenNoNonNegativeOffsetCanHelp() {
+        // The world starts below the client floor, but its top already fits. A non-negative offset moves
+        // content down in client space, which only makes the bottom worse. floorToSection(200 - 256) = -64,
+        // so the useful maximum is not positive.
+        AltusSession.WindowConfig w = AltusSession.WindowConfig.of(-64, 200, 0, 256, 0);
+        assertFalse(w.needed());
+        assertEquals(0, w.maxOffset());
+
+        // an override cannot switch on what the window rules rule out
+        assertFalse(AltusSession.WindowConfig.of(-64, 200, 0, 256, 512).needed());
+    }
+
+    @Test
     void chunkParamsUseRealDimensionSectionCount() {
         AltusSession.WindowConfig bte = AltusSession.WindowConfig.of(-64, 1952, -512, 1024, 0);
         var params = bte.chunkParams(1440);
