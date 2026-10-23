@@ -3,12 +3,15 @@ package fr.buildtheearth.skywindow.translate;
 import org.cloudburstmc.math.vector.Vector3d;
 import org.cloudburstmc.math.vector.Vector3i;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.MinecartStep;
+import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PositionElement;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.GlobalPos;
 import org.geysermc.mcprotocollib.protocol.data.game.level.block.BlockChangeEntry;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundAddEntityPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundEntityPositionSyncPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundMoveMinecartPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundMoveVehiclePacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerLookAtPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerPositionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundTeleportEntityPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundBlockDestructionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundBlockEntityDataPacket;
@@ -17,6 +20,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.Clien
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundExplodePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundLevelEventPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundLevelParticlesPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundOpenSignEditorPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundSectionBlocksUpdatePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundSetDefaultSpawnPositionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundSoundPacket;
@@ -70,8 +74,17 @@ public final class InboundYTransforms {
             return p.withLerpSteps(shiftSteps(p.getLerpSteps(), offset));
         }
         if (packet instanceof ClientboundTeleportEntityPacket p) {
-            Vector3d pos = p.getPosition();
-            return p.withPosition(Vector3d.from(pos.getX(), pos.getY() - offset, pos.getZ()));
+            return p.withPosition(shiftAbsoluteY(p.getPosition(), p.getRelatives(), offset));
+        }
+        if (packet instanceof ClientboundPlayerPositionPacket p) {
+            return p.withPosition(shiftAbsoluteY(p.getPosition(), p.getRelatives(), offset));
+        }
+        if (packet instanceof ClientboundPlayerLookAtPacket p) {
+            // The look target is always absolute; the entity origin variants do not change this.
+            return p.withY(p.getY() - offset);
+        }
+        if (packet instanceof ClientboundOpenSignEditorPacket p) {
+            return p.withPosition(shift(p.getPosition(), offset));
         }
         if (packet instanceof ClientboundEntityPositionSyncPacket p) {
             Vector3d pos = p.getPosition();
@@ -115,6 +128,17 @@ public final class InboundYTransforms {
                 s.movement(), s.yRot(), s.xRot(), s.weight()));
         }
         return out;
+    }
+
+    /**
+     * A teleport's Y is absolute unless the packet flags Y as relative, in which case it is a delta from the
+     * entity's current position. Deltas are relative quantities and are never shifted.
+     */
+    private static Vector3d shiftAbsoluteY(Vector3d pos, List<PositionElement> relatives, int offset) {
+        if (relatives.contains(PositionElement.Y)) {
+            return pos;
+        }
+        return Vector3d.from(pos.getX(), pos.getY() - offset, pos.getZ());
     }
 
     private static Vector3i shift(Vector3i v, int offset) {

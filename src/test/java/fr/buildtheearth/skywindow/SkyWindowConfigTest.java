@@ -107,4 +107,19 @@ class SkyWindowConfigTest {
     void missingFilePropagates(@TempDir Path dir) {
         assertThrows(java.io.IOException.class, () -> SkyWindowConfig.load(dir.resolve("nope.properties")));
     }
+
+    @Test
+    void freezeHoldActionsFalseIsHonoured(@TempDir Path dir) throws Exception {
+        SkyWindowConfig c = parse(dir, "freeze-hold-actions=false\n");
+        assertFalse(c.freezeHoldActions);
+        assertTrue(c.warnings.isEmpty());
+    }
+
+    @Test
+    void invalidBooleanKeepsTheDefaultAndIsReported(@TempDir Path dir) throws Exception {
+        SkyWindowConfig c = parse(dir, "freeze-hold-actions=flase\n");
+        assertTrue(c.freezeHoldActions, "a typo must not silently disable the option");
+        assertEquals(1, c.warnings.size());
+        assertTrue(c.warnings.get(0).contains("freeze-hold-actions"));
+    }
 }

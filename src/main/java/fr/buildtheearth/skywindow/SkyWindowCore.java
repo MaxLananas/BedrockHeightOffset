@@ -79,12 +79,21 @@ public final class SkyWindowCore {
         }
     }
 
-    /** Config reload without disturbing live sessions: handlers read config through this core. */
+    /**
+     * Config reload without disturbing live sessions. Handlers read configuration through this core on every
+     * packet; the chunk-cache budget is re-applied to every tracked session; enabling re-attaches the pipeline
+     * for players already connected; disabling detaches every pipeline but keeps the session states so that a
+     * later re-enable does not depend on a reconnect.
+     */
     public void reload() {
         loadConfig();
+        for (SkyWindowSession state : states.values()) {
+            state.chunkCache.resize(config.chunkCacheMaxChunks, config.chunkCacheMaxMegabytes * 1024L * 1024L);
+        }
         running = config.enabled;
         if (running) {
             installShiftedWorldManager();
+            attachAll();
         } else {
             detachAll();
             unwrapWorldManager();
@@ -94,6 +103,7 @@ public final class SkyWindowCore {
     public void stop() {
         running = false;
         detachAll();
+        states.clear();
         unwrapWorldManager();
     }
 
@@ -163,11 +173,11 @@ public final class SkyWindowCore {
         return sb.toString();
     }
 
+    /** Removes every pipeline handler. Session states are kept; the handler's removal resets the offset. */
     private void detachAll() {
-        for (SkyWindowSession state : states.values()) {
-            state.frozen = false;
-            state.offset = 0;
-            state.resetChunkCache();
+        for (Map.Entry<GeyserSession, SkyWindowSession> e : states.entrySet()) {
+            SkyWindowSession state = e.getValue();
+            state.attached = false;
             var channel = state.channel;
             if (channel != null && channel.isActive()) {
                 channel.eventLoop().execute(() -> {
@@ -177,7 +187,19 @@ public final class SkyWindowCore {
                 });
             }
         }
-        states.clear();
+    }
+
+    /** Re-attaches the pipeline for every open session that is currently tracked. */
+    private void attachAll() {
+        for (Map.Entry<GeyserSession, SkyWindowSession> e : states.entrySet()) {
+            GeyserSession session = e.getKey();
+            SkyWindowSession state = e.getValue();
+            if (session.isClosed() || state.attached) {
+                continue;
+            }
+            state.refreshWindow();
+            tryAttach(session, state, 0);
+        }
     }
 
     // ------------------------------------------------------------------ config & state access
@@ -228,9 +250,10 @@ public final class SkyWindowCore {
 
     public void onSessionInitialized(GeyserConnection connection) {
         GeyserSession session = cast(connection);
-        if (session == null || !running || session.isClosed()) {
+        if (session == null || session.isClosed()) {
             return;
         }
+        // State is created even while disabled, so that enabling the extension later can attach it.
         SkyWindowConfig cfg = config;
         states.computeIfAbsent(session, s -> new SkyWindowSession(
             () -> recomputeWindow(s), cfg.chunkCacheMaxChunks, cfg.chunkCacheMaxMegabytes * 1024L * 1024L));

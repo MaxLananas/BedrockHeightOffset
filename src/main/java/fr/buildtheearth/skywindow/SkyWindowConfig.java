@@ -55,21 +55,21 @@ public final class SkyWindowConfig {
         try (InputStream in = Files.newInputStream(file)) {
             props.load(in);
         }
-        java.util.List<String> warnings = new java.util.ArrayList<>();
+        List<String> warnings = new java.util.ArrayList<>();
         warnUnknownKeys(props, warnings);
-        config.enabled = bool(props, "enabled", config.enabled);
+        config.enabled = bool(props, "enabled", config.enabled, warnings);
         config.switchMarginBlocks = Math.min(256, Math.max(32, integer(props, "switch-margin-blocks", config.switchMarginBlocks, warnings)));
         config.switchCooldownMs = Math.min(60_000L, Math.max(250L, longVal(props, "switch-cooldown-ms", config.switchCooldownMs, warnings)));
         config.freezeMs = Math.min(5_000L, Math.max(100L, longVal(props, "freeze-ms", config.freezeMs, warnings)));
-        config.freezeHoldActions = bool(props, "freeze-hold-actions", config.freezeHoldActions);
-        config.freezeHoldMovement = bool(props, "freeze-hold-movement", config.freezeHoldMovement);
-        config.announceSwitches = bool(props, "announce-switches", config.announceSwitches);
+        config.freezeHoldActions = bool(props, "freeze-hold-actions", config.freezeHoldActions, warnings);
+        config.freezeHoldMovement = bool(props, "freeze-hold-movement", config.freezeHoldMovement, warnings);
+        config.announceSwitches = bool(props, "announce-switches", config.announceSwitches, warnings);
         config.chunkCacheMaxChunks = Math.min(32_768, Math.max(64, integer(props, "chunk-cache-max-chunks", config.chunkCacheMaxChunks, warnings)));
         config.chunkCacheMaxMegabytes = Math.min(1_024, Math.max(8, integer(props, "chunk-cache-max-megabytes", config.chunkCacheMaxMegabytes, warnings)));
         config.maxOffsetBlocks = alignToSection(integer(props, "max-offset-blocks", config.maxOffsetBlocks, warnings));
         String commands = props.getProperty("rewrite-commands", "tp,tppos,teleport").toLowerCase(Locale.ROOT).trim();
         config.rewriteCommands = commands.isEmpty() ? Set.of() : new HashSet<>(Arrays.asList(commands.split("\\s*,\\s*")));
-        config.logSwitches = bool(props, "log-switches", config.logSwitches);
+        config.logSwitches = bool(props, "log-switches", config.logSwitches, warnings);
         config.warnings = List.copyOf(warnings);
         return config;
     }
@@ -110,9 +110,24 @@ public final class SkyWindowConfig {
         return Math.max(0, blocks / 16 * 16);
     }
 
-    private static boolean bool(Properties props, String key, boolean def) {
-        String v = props.getProperty(key);
-        return v == null ? def : Boolean.parseBoolean(v.trim());
+    /**
+     * Strict boolean: only {@code true} and {@code false} (case-insensitive) are accepted. Anything else keeps the
+     * default and is reported, instead of silently becoming {@code false}.
+     */
+    private static boolean bool(Properties props, String key, boolean def, List<String> warnings) {
+        String raw = props.getProperty(key);
+        if (raw == null) {
+            return def;
+        }
+        String v = raw.trim().toLowerCase(Locale.ROOT);
+        if (v.equals("true")) {
+            return true;
+        }
+        if (v.equals("false")) {
+            return false;
+        }
+        warnings.add("invalid boolean for '" + key + "': '" + raw + "' (expected true or false; using " + def + ")");
+        return def;
     }
 
     private static int integer(Properties props, String key, int def) {
