@@ -1,15 +1,15 @@
 <p align="center">
-  <img src="assets/logo/altus-512.png" width="128" alt="Altus logo">
+  <img src="assets/logo/hauteur-512.png" width="128" alt="Hauteur logo">
 </p>
 
-# Altus
+# Hauteur
 
-Altus is a [Geyser](https://geysermc.org) extension. It lets Bedrock players build and move at Java-world
+Hauteur is a [Geyser](https://geysermc.org) extension. It lets Bedrock players build and move at Java-world
 heights that the Bedrock client cannot display natively (for example around Y = 1950 on a BuildTheEarth-style
 world), by shifting the vertical window the client sees as the player climbs.
 
 > **Hard limit.** The Bedrock client only renders a fixed vertical range, set by the client itself
-> (`minecraft:dimension_bounds`). No server-side software can extend it. Altus does not bypass that range;
+> (`minecraft:dimension_bounds`). No server-side software can extend it. Hauteur does not bypass that range;
 > it moves the window along the world. Content outside the current window is not displayed, and the window
 > is re-homed with a short, visible adjustment.
 
@@ -38,28 +38,28 @@ Status: **experimental**. The translation logic is covered by automated tests an
 | Server | A Geyser-supported platform (Spigot/Paper, Fabric, Velocity, BungeeCord, standalone) | Windowing is exercised by automated tests only. No live server has been tested for any platform. |
 | Bedrock client | Current release | Not tested in this repository. |
 
-Altus must not run next to the 3.x Bukkit plugin: installing both corrupts chunks.
+Hauteur must not run next to the 3.x Bukkit plugin: installing both corrupts chunks.
 
 ## Installation
 
 1. Install Geyser on your server (see the [Geyser setup guide](https://geysermc.org/wiki/geyser/setup/)).
-2. Download `altus-<version>.jar` from the [releases page](../../releases) and verify it:
+2. Download `hauteur-<version>.jar` from the [releases page](../../releases) and verify it:
    ```sh
    sha256sum -c SHA256SUMS.txt
    ```
 3. Copy the jar into the Geyser extensions folder:
    - Spigot/Paper: `plugins/Geyser-Spigot/extensions/`
    - Standalone: `extensions/` next to the Geyser jar
-4. Start the server. A `config.properties` file is written to `extensions/altus/`.
-5. From a Bedrock client, run `/altus doctor`. It reports whether the pipeline and the world-manager wrapper
+4. Start the server. A `config.properties` file is written to `extensions/hauteur/`.
+5. From a Bedrock client, run `/hauteur doctor`. It reports whether the pipeline and the world-manager wrapper
    are attached.
 
-Upgrading from 1.0.x: the configuration in `extensions/skywindow/` is copied to `extensions/altus/` on the
+Upgrading from 1.0.x: the configuration in `extensions/skywindow/` is copied to `extensions/hauteur/` on the
 first start (the old file is kept), and the old commands `/skywindow`, `/sw` and `/bho` remain as aliases.
 
 ## Configuration
 
-Edit `extensions/altus/config.properties` (see the sample written on first start). Unknown keys and invalid
+Edit `extensions/hauteur/config.properties` (see the sample written on first start). Unknown keys and invalid
 values produce a startup warning and keep the default. Most keys are reloaded with `/geyser reload`.
 
 | Key | Default | Meaning |
@@ -79,7 +79,7 @@ values produce a startup warning and keep the default. Most keys are reloaded wi
 
 ## Commands
 
-`/altus` (aliases `/skywindow`, `/sw`, `/bho`), Bedrock players only:
+`/hauteur` (aliases `/skywindow`, `/sw`, `/bho`), Bedrock players only:
 
 - `info`: offset, window bounds, cached chunks.
 - `watch on|off`, `recent`: the last translated packets, for debugging.
@@ -95,7 +95,7 @@ These are current, tested-or-documented facts, not promises:
 - **Not verified on a real Bedrock client.** Automated tests cover the Java-side translation and the decision
   logic only. Freeze timing, client adoption of the snap and visual results need the manual procedure in
   [VERIFICATION.md](docs/VERIFICATION.md).
-- **Client adoption is inferred from time.** Altus does not receive an acknowledgement that the Bedrock client
+- **Client adoption is inferred from time.** Hauteur does not receive an acknowledgement that the Bedrock client
   has adopted a new frame. The freeze lasts `freeze-ms`, and held packets are resolved by plausibility.
 - **Ambiguous packets are dropped.** When a switch is small (for example a clamp at the world edge) and both
   frames are plausible, held movement is dropped rather than guessed. The player may stall briefly.
@@ -105,7 +105,7 @@ These are current, tested-or-documented facts, not promises:
 - **Light data is not re-homed.** Geyser does not read light updates, so this does not affect Bedrock output,
   but the data is kept with the chunk and counted against the budget.
 - **World reads for collision and containers depend on the wrapper.** If the world-manager wrapper cannot be
-  installed, `/altus doctor` reports it, and direct world reads inside Geyser may disagree with the window.
+  installed, `/hauteur doctor` reports it, and direct world reads inside Geyser may disagree with the window.
 - **Not translated:** packets without an absolute Y (the server's own `ChunksBiomes` payload is ignored by
   Geyser and not windowed), test-block debugging packets, and signed chat commands (rewriting would break
   their signature). See [PACKET-MATRIX.md](docs/PACKET-MATRIX.md).
@@ -130,8 +130,8 @@ The current state of each check is in [docs/VERIFICATION.md](docs/VERIFICATION.m
 
 - Security issues: see [SECURITY.md](SECURITY.md). Do not open a public issue.
 - Bugs: open an issue with the Geyser build, the server platform, the Minecraft Java and Bedrock versions,
-  the output of `/altus doctor` and `/altus stats`, and, if possible, the output of `/altus watch on` followed
-  by `/altus recent` right after the problem.
+  the output of `/hauteur doctor` and `/hauteur stats`, and, if possible, the output of `/hauteur watch on` followed
+  by `/hauteur recent` right after the problem.
 
 ## Documentation
 
@@ -143,4 +143,4 @@ The current state of each check is in [docs/VERIFICATION.md](docs/VERIFICATION.m
 
 ## Licence
 
-Altus is released under the [MIT License](LICENSE). Copyright (c) 2026 MaxLananas.
+Hauteur is released under the [MIT License](LICENSE). Copyright (c) 2026 MaxLananas.

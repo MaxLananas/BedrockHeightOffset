@@ -14,7 +14,7 @@ is unavailable, contact the maintainers through the GitHub profile of the reposi
 
 Include:
 
-- the Altus version (`sha256sum` of the jar, if available), the Geyser build, and the server platform;
+- the Hauteur version (`sha256sum` of the jar, if available), the Geyser build, and the server platform;
 - a description of the impact and the steps to reproduce;
 - whether the issue can be triggered by a Bedrock or Java client without operator privileges.
 
@@ -23,6 +23,6 @@ process in CONTRIBUTING.md.
 
 ## Scope
 
-In scope: the Altus extension code, its build and release workflows, and the released jar.
+In scope: the Hauteur extension code, its build and release workflows, and the released jar.
 
 Out of scope: Geyser, mcprotocollib, Minecraft, and the Bedrock client. Report those to their own projects.

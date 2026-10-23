@@ -24,7 +24,7 @@ realY   = clientY + O    (Java server)
 ## Pipeline position
 
 ```
-Java server  <->  [codec] -> [altus: AltusHandler] -> [manager] -> Geyser translators -> Bedrock
+Java server  <->  [codec] -> [hauteur: HauteurHandler] -> [manager] -> Geyser translators -> Bedrock
 ```
 
 The handler sits directly after mcprotocollib's `codec` and before Geyser's `manager`. Inbound packets reach it
@@ -32,9 +32,9 @@ decoded in real space. Outbound packets reach it before serialization, in client
 only place where absolute Y is translated for the session.
 
 The handler does not depend on Geyser types. It reads the session through `pipeline/PlayerSession`, the
-configuration through `pipeline/PipelineSettings` (implemented by `AltusCore`), and reports through
+configuration through `pipeline/PipelineSettings` (implemented by `HauteurCore`), and reports through
 `pipeline/Diagnostics`. Production adapters are `session/GeyserPlayerSession` and `pipeline/GeyserDiagnostics`.
-That seam is what lets `AltusHandlerTest` run the real pipeline without a Geyser runtime.
+That seam is what lets `HauteurHandlerTest` run the real pipeline without a Geyser runtime.
 
 Writes that Geyser makes on the Java side pass through the handler too. Packets the handler injects go to
 Geyser with `managerContext.fireChannelRead`, so they are not translated again.
@@ -43,7 +43,7 @@ Geyser with `managerContext.fireChannelRead`, so they are not translated again.
 
 | Context | What runs | Shared state |
 |---|---|---|
-| Channel event loop | Inbound, window switches, freeze end, flush of held packets | `AltusSession` fields are written here. |
+| Channel event loop | Inbound, window switches, freeze end, flush of held packets | `HauteurSession` fields are written here. |
 | Geyser tick thread (or any thread) | Outbound `write` | Holds `freezeLock`, so it cannot interleave with a switch or a flush. Reads volatile fields. |
 | Session and reload threads | Disconnect, reload, sweeper | `ChunkCache` is synchronized, so `clear` and `resize` are safe. |
 
@@ -56,7 +56,7 @@ lock is.
 
 ## Window switch
 
-`AltusHandler.performSwitch(realY, injectSnap, generation)`, under `freezeLock`:
+`HauteurHandler.performSwitch(realY, injectSnap, generation)`, under `freezeLock`:
 
 1. Compute the target offset. Return if it equals the current offset, the world generation changed, or the
    pipeline is not active.
@@ -78,7 +78,7 @@ whether another switch is needed. A teleport that arrived during the freeze is t
   injected. The cooldown is bypassed, because the client is already at that position. A relative Y is a delta
   from the anchor.
 - **Client movement** (`MovePlayerPos`, `MovePlayerPosRot`). Subject to the margin and the cooldown.
-- **Operator** (`/altus window`). Forced target, snap injected.
+- **Operator** (`/hauteur window`). Forced target, snap injected.
 
 ### Journal
 
@@ -144,10 +144,10 @@ block entities.
 | Exception during unfreeze | Held packets and ghost re-sends are discarded, the freeze is cleared, and the error is logged. |
 | Chunk does not fit the cache budget | Not cached, counted, replay skipped for it. |
 | Journal overflow | Chunk evicted, counted. |
-| Attach fails after retries | Session runs untranslated; `/altus info` and `/altus doctor` report it. |
-| World-manager wrap fails | Reported by `/altus doctor`; collision and container reads may disagree with the window. |
+| Attach fails after retries | Session runs untranslated; `/hauteur info` and `/hauteur doctor` report it. |
+| World-manager wrap fails | Reported by `/hauteur doctor`; collision and container reads may disagree with the window. |
 
-Quarantined types are reported by `/altus doctor` with the first error, so that a deterministic failure can be
+Quarantined types are reported by `/hauteur doctor` with the first error, so that a deterministic failure can be
 diagnosed.
 
 ## Lifecycle
@@ -163,7 +163,7 @@ diagnosed.
 - **Detaching a shifted client:** removing the handler while the offset is non-zero on a live channel (disable,
   reload, shutdown) first gives the client its real-space view back: cached chunks are replayed at offset 0 and
   the player is snapped to the last real Y. Without this, the client would stay in a frame that nothing translates
-  any more. Nothing is sent on a closed channel. Covered by `AltusHandlerTest` on an embedded channel; the
+  any more. Nothing is sent on a closed channel. Covered by `HauteurHandlerTest` on an embedded channel; the
   real-client behaviour is covered by the manual procedure (see VERIFICATION).
 - **Shutdown:** the sweeper is cancelled, handlers are removed, states are cleared, and the world manager is restored.
 - **Dimension read failure:** the window is re-derived from live data. If that read fails, the previous snapshot is
@@ -173,11 +173,11 @@ diagnosed.
 
 `ShiftedWorldManager` wraps Geyser's `WorldManager`, so that direct, session-aware reads (collision correction,
 container checks, decorated pots) add the caller's offset. Installation is the only reflection point in the
-extension, and it is reported by `/altus doctor`.
+extension, and it is reported by `/hauteur doctor`.
 
 ## What is not guaranteed
 
 - Client-side adoption of a frame is inferred from time and plausibility; Bedrock sends no acknowledgement that
-  Altus can read.
+  Hauteur can read.
 - Whether a snap and the replayed terrain look correct on a real client.
 - Performance under load. Replays run on the event loop and have not been measured.

@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something in Altus misbehaves on a server
+about: Something in Hauteur misbehaves on a server
 labels: bug
 ---
 
@@ -15,9 +15,9 @@ labels: bug
 - Geyser build (`/geyser version`):
 - Server platform (Spigot, Paper, Fabric, Velocity, standalone, ...):
 - Java and Bedrock client versions:
-- Altus version (`altus-<version>.jar`):
+- Hauteur version (`hauteur-<version>.jar`):
 
-**Output of `/altus doctor` and `/altus stats`**
+**Output of `/hauteur doctor` and `/hauteur stats`**
 
 ```
 paste here
@@ -25,4 +25,4 @@ paste here
 
 **Recent packets, if the problem is reproducible**
 
-Run `/altus watch on`, reproduce the problem, then `/altus recent` and paste the output.
+Run `/hauteur watch on`, reproduce the problem, then `/hauteur recent` and paste the output.

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Altus. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to Hauteur. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) for the extension's configuration,
 commands and jar name. The pinned Geyser build is listed in the README.
 
@@ -10,10 +10,11 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 
 ### Changed
 
-- The project is now **Altus** (formerly SkyWindow). Jar: `altus-<version>.jar`. Package:
-  `io.github.maxlananas.altus`. Extension id: `altus`. Command: `/altus`.
+- The project is now **Hauteur** (formerly SkyWindow). It was briefly named Altus on this branch; the name was
+  dropped before any release because a NeoForge mod already uses the `/altus` command. Jar: `hauteur-<version>.jar`. Package:
+  `io.github.maxlananas.hauteur`. Extension id: `hauteur`. Command: `/hauteur`.
 - Maven `groupId` is now `io.github.maxlananas` (it was `fr.buildtheearth` in 1.0.0). The repository name is unchanged.
-- Migration: `extensions/skywindow/config.properties` is copied to `extensions/altus/` on first start (the old file
+- Migration: `extensions/skywindow/config.properties` is copied to `extensions/hauteur/` on first start (the old file
   is kept). `/skywindow`, `/sw` and `/bho` remain as command aliases.
 - Licensed under the MIT License (see `LICENSE`).
 - GitHub Actions are pinned to commit SHAs, with the tag in a comment. The workflows run with read-only
@@ -27,10 +28,10 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 
 ### Fixed
 
-- `/altus window` accepted `NaN`, infinite and out-of-dimension values, and the handler could anchor on a non-finite
+- `/hauteur window` accepted `NaN`, infinite and out-of-dimension values, and the handler could anchor on a non-finite
   Y. Such a value could snap the client outside the world on detach. Both now refuse it, and a non-finite client Y
   drops the packet without moving the anchor.
-- `/altus stats reset` did not reset the freeze-time total, so the average freeze after a reset mixed two periods.
+- `/hauteur stats reset` did not reset the freeze-time total, so the average freeze after a reset mixed two periods.
 - Packets held during a window switch were written but never flushed. They could wait in Netty's outbound
   buffer until the next packet from Geyser, which may never come if the player stops moving. The freeze now ends
   with a flush.
@@ -63,12 +64,12 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 - Changes to the chunk-cache budget on reload did not apply to connected players, and re-enabling the extension
   did not attach connected players until they reconnected.
 - A packet type whose transform failed was passed through untranslated while the window was active. It is now
-  dropped (fail closed) and reported by `/altus doctor`.
+  dropped (fail closed) and reported by `/hauteur doctor`.
 - Chunk-cache access from the session and reload threads was unsynchronized.
 
 ### Added
 
-- `/altus stats` shows chunks that could not be replayed, journal overflows and transform failures.
+- `/hauteur stats` shows chunks that could not be replayed, journal overflows and transform failures.
 - Release workflow: tag and Maven version must match, the tagged commit must be on `main`, existing releases are
   verified rather than overwritten, and the jar and checksums are published together with build information.
 - Build workflow publishes the Surefire test summary on the job page.
