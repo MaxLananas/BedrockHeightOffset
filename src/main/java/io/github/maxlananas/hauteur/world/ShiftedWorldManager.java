@@ -1,6 +1,5 @@
 package io.github.maxlananas.hauteur.world;
 
-import io.github.maxlananas.hauteur.HauteurCore;
 import org.cloudburstmc.math.vector.Vector3i;
 import org.geysermc.erosion.util.BlockPositionIterator;
 import org.geysermc.geyser.level.WorldManager;
@@ -10,6 +9,7 @@ import org.geysermc.mcprotocollib.protocol.data.game.setting.Difficulty;
 
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.ToIntFunction;
 
 /**
  * Wraps the platform's {@link WorldManager} so that every direct, session-aware world read Geyser
@@ -28,11 +28,12 @@ import java.util.function.Consumer;
  */
 public final class ShiftedWorldManager extends WorldManager {
     private final WorldManager delegate;
-    private final HauteurCore core;
+    /** Current window offset of a session; 0 for sessions without a window. Kept as a function to stay testable. */
+    private final ToIntFunction<GeyserSession> offsetOf;
 
-    public ShiftedWorldManager(WorldManager delegate, HauteurCore core) {
+    public ShiftedWorldManager(WorldManager delegate, ToIntFunction<GeyserSession> offsetOf) {
         this.delegate = delegate;
-        this.core = core;
+        this.offsetOf = offsetOf;
     }
 
     public WorldManager delegate() {
@@ -41,7 +42,7 @@ public final class ShiftedWorldManager extends WorldManager {
 
     @Override
     public int getBlockAt(GeyserSession session, int x, int y, int z) {
-        int offset = core.currentOffset(session);
+        int offset = offsetOf.applyAsInt(session);
         return offset == 0
             ? delegate.getBlockAt(session, x, y, z)
             : delegate.getBlockAt(session, x, y + offset, z);
@@ -49,7 +50,7 @@ public final class ShiftedWorldManager extends WorldManager {
 
     @Override
     public int[] getBlocksAt(GeyserSession session, BlockPositionIterator iter) {
-        int offset = core.currentOffset(session);
+        int offset = offsetOf.applyAsInt(session);
         if (offset == 0) {
             return delegate.getBlocksAt(session, iter);
         }
@@ -62,7 +63,7 @@ public final class ShiftedWorldManager extends WorldManager {
 
     @Override
     public void getDecoratedPotData(GeyserSession session, Vector3i pos, Consumer<List<String>> apply) {
-        int offset = core.currentOffset(session);
+        int offset = offsetOf.applyAsInt(session);
         if (offset == 0) {
             delegate.getDecoratedPotData(session, pos, apply);
         } else {
