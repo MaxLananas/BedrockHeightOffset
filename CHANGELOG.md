@@ -25,6 +25,10 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
   readable when the job log is not.
 - The pipeline no longer depends on Geyser session types. It reads the session, settings and logger through
   small interfaces (`PlayerSession`, `PipelineSettings`, `Diagnostics`) with Geyser adapters. This is internal.
+- Release jars are reproducible for a given tag: entry timestamps are taken from the tagged commit. A release built
+  against a Geyser SNAPSHOT is flagged in the workflow log, because the snapshot can change under it.
+- Logo export: the Pillow dependency is pinned in `dev/release/requirements.txt` (13.0.0, Python 3.11 or later). With
+  that pin, the committed SVG and PNG files are reproduced byte for byte.
 
 ### Fixed
 
@@ -85,6 +89,8 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 - Reload work was done on Geyser's pre-reload event, which Geyser's own disable and enable then undid. Only the
   post-reload event now triggers it (see `docs/adr/0004-reload-lifecycle.md`).
 - A scheduler retry that raced with Geyser's shutdown could throw; it now stops quietly.
+- A block change recorded on the channel thread while a window switch read a cached chunk's journal could race that
+  read. The journal is now guarded by its entry's lock.
 
 ### Added
 
