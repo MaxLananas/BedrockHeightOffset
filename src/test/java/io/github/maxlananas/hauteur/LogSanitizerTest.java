@@ -48,6 +48,13 @@ class LogSanitizerTest {
     }
 
     @Test
+    void zeroWidthJoinerInEmojiSequencesIsKept() {
+        // man + ZWJ + woman + ZWJ + girl: one family emoji, which must not turn into question marks.
+        String family = "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67";
+        assertEquals(family, LogSanitizer.playerName(family));
+    }
+
+    @Test
     void longNamesAreCutToTheLimit() {
         String name = "x".repeat(40);
         assertEquals("x".repeat(LogSanitizer.MAX_NAME_LENGTH), LogSanitizer.playerName(name));

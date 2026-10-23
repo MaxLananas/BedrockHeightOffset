@@ -7,6 +7,7 @@ package io.github.maxlananas.hauteur;
 public final class LogSanitizer {
     /** Longest name written to logs. Longer names are cut, so one player cannot flood a line. */
     public static final int MAX_NAME_LENGTH = 32;
+    private static final char ZERO_WIDTH_JOINER = 0x200D;
 
     private LogSanitizer() {
     }
@@ -37,6 +38,10 @@ public final class LogSanitizer {
     private static boolean isUnsafe(char c) {
         if (c < 0x20 || (c >= 0x7F && c <= 0x9F)) {
             return true; // C0 controls, DEL, C1 controls
+        }
+        if (c == ZERO_WIDTH_JOINER) {
+            // Joins emoji sequences and hides nothing by itself; replacing it would garble names like family emoji.
+            return false;
         }
         int type = Character.getType(c);
         return type == Character.FORMAT || type == Character.LINE_SEPARATOR || type == Character.PARAGRAPH_SEPARATOR;
