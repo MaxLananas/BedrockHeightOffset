@@ -41,8 +41,14 @@ jobs:
       - name: Build and test against Geyser ${{ env.GEYSER_VERSION }}
         run: |
           set +e
+          if [[ "$GEYSER_VERSION" == *-SNAPSHOT ]]; then
+            echo "::warning::release built against the Geyser snapshot $GEYSER_VERSION; it is not reproducible from Geyser's side"
+          fi
+          # Pin jar entry timestamps to the tagged commit so the same tag always yields the same bytes.
+          STAMP="$(date -u -d "@$(git log -1 --format=%ct "$GITHUB_SHA")" +%Y-%m-%dT%H:%M:%SZ)"
           ./mvnw -B -ntp \
-              -Dgeyser.version="$GEYSER_VERSION" verify 2>&1 | tee mvn.log
+              -Dgeyser.version="$GEYSER_VERSION" \
+              -Dproject.build.outputTimestamp="$STAMP" verify 2>&1 | tee mvn.log
           ec=${PIPESTATUS[0]}
           if [ "$ec" -ne 0 ]; then
             grep -E "\[ERROR\]" mvn.log | head -50 | while IFS= read -r line; do

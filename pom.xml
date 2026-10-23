@@ -46,6 +46,12 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>21</maven.compiler.release>
         <!--
+          Zip entry timestamps. The default is a fixed instant so local builds are reproducible too; the release
+          workflow overrides it with the tagged commit time (-Dproject.build.outputTimestamp=...), so the same tag
+          always produces the same jar bytes.
+        -->
+        <project.build.outputTimestamp>2026-10-23T00:00:00Z</project.build.outputTimestamp>
+        <!--
           Geyser build this extension compiles against. The extension runs inside the Geyser
           plugin's classloader (parent-first), so the shaded mcprotocollib / cloudburst-protocol /
           netty classes it provides are the exact runtime classes - they are compileOnly here and
