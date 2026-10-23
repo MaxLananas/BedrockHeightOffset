@@ -32,6 +32,8 @@ jobs:
           cache: maven
       - name: Coordinate-math oracle (Python mirror of WindowRules and SectionCodec)
         run: python3 dev/verify/oracle.py 5
+      - name: Logo sources match their generator
+        run: python3 dev/release/logo.py --check
       - name: Build and test against Geyser ${{ env.GEYSER_VERSION }}
         run: |
           set +e
