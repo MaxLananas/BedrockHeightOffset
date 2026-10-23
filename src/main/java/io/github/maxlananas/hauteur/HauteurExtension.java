@@ -13,7 +13,9 @@ import org.geysermc.geyser.api.extension.Extension;
 
 /**
  * Hauteur: a Geyser extension that lets Bedrock clients build, move and interact at any
- * height of a Java world far beyond the client's native range, without rubber-banding.
+ * height of a Java world far beyond the client's native range. The world stays where it is; the
+ * client's vertical window moves. Corrective snaps are not expected, but they have not been ruled out
+ * on a live server (see docs/VERIFICATION.md, Known open items).
  *
  * <p>The old implementation patched Bedrock packets on the wire to fake coordinates; that approach is
  * abandoned entirely (see README "Why the old design was removed"). This rewrite translates absolute Y
