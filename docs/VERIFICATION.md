@@ -77,7 +77,7 @@ Minecraft Java and Bedrock versions, and the output of `/hauteur doctor` and `/h
    return to real space and the player to land at their real height, with no snap back to a shifted position and
    no reconnect.
 10. **Failure injection** (optional). Temporarily break a transform in a test build. Expect the affected packet type
-    to be quarantined and reported by `/hauteur doctor`, and no packet in the wrong frame.
+    to be quarantined and reported by `/hauteur doctor` for that session, and no packet in the wrong frame.
 11. **Performance.** Measure a switch with a full view distance (for example 24 chunks). Record replay time on the
     event loop. No figure is claimed in the documentation until this is measured.
 

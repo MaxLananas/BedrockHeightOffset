@@ -38,7 +38,8 @@ Status: **experimental**. The translation logic is covered by automated tests an
 | Server | A Geyser-supported platform (Spigot/Paper, Fabric, Velocity, BungeeCord, standalone) | Windowing is exercised by automated tests only. No live server has been tested for any platform. |
 | Bedrock client | Current release | Not tested in this repository. |
 
-Hauteur must not run next to the 3.x Bukkit plugin: installing both corrupts chunks.
+Hauteur has not been tested alongside the 3.x Bukkit plugin or any other plugin that rewrites chunks or player
+positions. Do not assume the two coexist.
 
 ## Installation
 
@@ -83,7 +84,7 @@ values produce a startup warning and keep the default. Most keys are reloaded wi
 
 - `info`: offset, window bounds, cached chunks.
 - `watch on|off`, `recent`: the last translated packets, for debugging.
-- `doctor`: attachment and world-manager status, quarantined packet types, Geyser build.
+- `doctor`: attachment and world-manager status, packet types quarantined in this session, Geyser build.
 - `stats [reset]`: counters for this session (translations, replays, switches, held and dropped packets,
   journal overflows, transform failures).
 - `window <realY>`: force a window switch around a real Y (builder tooling).
@@ -110,9 +111,11 @@ These are current, tested-or-documented facts, not promises:
   Geyser and not windowed), test-block debugging packets, and signed chat commands (rewriting would break
   their signature). See [PACKET-MATRIX.md](docs/PACKET-MATRIX.md).
 - **Failure policy.** When a packet type fails to transform while the window is active, that type is dropped
-  for the session (fail closed) and logged once. Reconnecting clears the quarantine.
-- **Performance is not benchmarked.** A window switch replays every cached chunk on the channel event loop.
-  The cost has not been measured on a real server.
+  for the session (fail closed) and logged once. The quarantine belongs to the session: a reconnect starts with
+  an empty list.
+- **Performance is measured only on synthetic chunks.** A window switch replays every cached chunk on the channel
+  event loop. `dev/bench/SectionCodecBench.java` times the codec alone (see
+  [VERIFICATION.md](docs/VERIFICATION.md)); the replay cost on a live server with real chunks has not been measured.
 
 ## Verification
 

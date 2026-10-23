@@ -147,8 +147,8 @@ block entities.
 | Attach fails after retries | Session runs untranslated; `/hauteur info` and `/hauteur doctor` report it. |
 | World-manager wrap fails | Reported by `/hauteur doctor`; collision and container reads may disagree with the window. |
 
-Quarantined types are reported by `/hauteur doctor` with the first error, so that a deterministic failure can be
-diagnosed.
+The quarantine is kept per session and is cleared on reconnect. `/hauteur doctor` reports the current session's
+quarantined types with the first error, so that a deterministic failure can be diagnosed.
 
 ## Lifecycle
 
