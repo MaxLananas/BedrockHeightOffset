@@ -133,4 +133,20 @@ class HauteurConfigTest {
         assertEquals(1, c.warnings.size());
         assertTrue(c.warnings.get(0).contains("freeze-hold-actions"));
     }
+
+    @Test
+    void rewriteCommandListIgnoresEmptyEntriesAndWhitespace(@TempDir Path dir) throws Exception {
+        assertEquals(Set.of("tp", "tppos"), parse(dir, "rewrite-commands=tp,,tppos,\n").rewriteCommands,
+            "empty entries from doubled or trailing commas are dropped");
+        assertEquals(Set.of("tp", "say"), parse(dir, "rewrite-commands= TP , ,say \n").rewriteCommands,
+            "whitespace is trimmed and names are lower-cased");
+        assertEquals(Set.of(), parse(dir, "rewrite-commands=,,\n").rewriteCommands,
+            "a list with no names disables rewriting");
+    }
+
+    @Test
+    void defaultCommandListIsTheSameWhetherOrNotTheKeyIsWritten(@TempDir Path dir) throws Exception {
+        assertEquals(Set.of("tp", "tppos", "teleport"), parse(dir, "enabled=true\n").rewriteCommands);
+        assertEquals(HauteurConfig.loadDefault().rewriteCommands, parse(dir, "").rewriteCommands);
+    }
 }

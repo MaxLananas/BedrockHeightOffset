@@ -5,7 +5,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -18,6 +18,16 @@ import java.util.Set;
  * relocated copy, which an extension must not import; see README "Configuration".
  */
 public final class HauteurConfig {
+    /** Default for {@code rewrite-commands}; the field initializer and the loader both read this constant. */
+    private static final String DEFAULT_REWRITE_COMMANDS = "tp,tppos,teleport";
+
+    /** Every key the loader understands. Anything else in the file is reported as unknown. */
+    private static final Set<String> KNOWN_KEYS = Set.of(
+        "enabled", "switch-margin-blocks", "switch-cooldown-ms", "freeze-ms",
+        "freeze-hold-actions", "freeze-hold-movement", "announce-switches",
+        "chunk-cache-max-chunks", "chunk-cache-max-megabytes", "max-offset-blocks",
+        "rewrite-commands", "log-switches");
+
     public boolean enabled = true;
     /** Switch when player feet reach within this many blocks of the window edge. Min 32. */
     public int switchMarginBlocks = 64;
@@ -36,7 +46,7 @@ public final class HauteurConfig {
     /** 0 = derive from the dimension; set to force a lower cap (safety valve). */
     public int maxOffsetBlocks = 0;
     /** Chat commands whose absolute Y is rewritten. Empty string disables rewriting. */
-    public Set<String> rewriteCommands = new HashSet<>(Arrays.asList("tp", "tppos", "teleport"));
+    public Set<String> rewriteCommands = parseCommandList(DEFAULT_REWRITE_COMMANDS);
     /** Log one line per window switch (they are rare by construction). */
     public boolean logSwitches = true;
     /** Parse-time findings (invalid values, unknown keys); logged by the core, never fatal. */
@@ -59,7 +69,7 @@ public final class HauteurConfig {
             // error: report it as an I/O failure so the core falls back to defaults instead of failing to start.
             throw new IOException("malformed configuration " + file + ": " + e.getMessage(), e);
         }
-        List<String> warnings = new java.util.ArrayList<>();
+        List<String> warnings = new ArrayList<>();
         warnUnknownKeys(props, warnings);
         config.enabled = bool(props, "enabled", config.enabled, warnings);
         config.switchMarginBlocks = Math.min(256, Math.max(32, integer(props, "switch-margin-blocks", config.switchMarginBlocks, warnings)));
@@ -71,8 +81,7 @@ public final class HauteurConfig {
         config.chunkCacheMaxChunks = Math.min(32_768, Math.max(64, integer(props, "chunk-cache-max-chunks", config.chunkCacheMaxChunks, warnings)));
         config.chunkCacheMaxMegabytes = Math.min(1_024, Math.max(8, integer(props, "chunk-cache-max-megabytes", config.chunkCacheMaxMegabytes, warnings)));
         config.maxOffsetBlocks = alignToSection(integer(props, "max-offset-blocks", config.maxOffsetBlocks, warnings));
-        String commands = props.getProperty("rewrite-commands", "tp,tppos,teleport").toLowerCase(Locale.ROOT).trim();
-        config.rewriteCommands = commands.isEmpty() ? Set.of() : new HashSet<>(Arrays.asList(commands.split("\\s*,\\s*")));
+        config.rewriteCommands = parseCommandList(props.getProperty("rewrite-commands", DEFAULT_REWRITE_COMMANDS));
         config.logSwitches = bool(props, "log-switches", config.logSwitches, warnings);
         config.warnings = List.copyOf(warnings);
         return config;
@@ -110,6 +119,18 @@ public final class HauteurConfig {
             """;
     }
 
+    /** Comma-separated command names: trimmed, lower-case, empty entries dropped. An empty list disables rewriting. */
+    private static Set<String> parseCommandList(String raw) {
+        Set<String> out = new HashSet<>();
+        for (String part : raw.split(",")) {
+            String name = part.trim().toLowerCase(Locale.ROOT);
+            if (!name.isEmpty()) {
+                out.add(name);
+            }
+        }
+        return Set.copyOf(out);
+    }
+
     private static int alignToSection(int blocks) {
         return Math.max(0, blocks / 16 * 16);
     }
@@ -134,10 +155,6 @@ public final class HauteurConfig {
         return def;
     }
 
-    private static int integer(Properties props, String key, int def) {
-        return integer(props, key, def, null);
-    }
-
     private static int integer(Properties props, String key, int def, List<String> warnings) {
         String raw = props.getProperty(key);
         if (raw == null) {
@@ -146,18 +163,10 @@ public final class HauteurConfig {
         try {
             return Integer.parseInt(raw.trim());
         } catch (NumberFormatException e) {
-            if (warnings != null) {
-                warnings.add("invalid value for '" + key + "': '" + raw + "' (using " + def + ")");
-            }
+            warnings.add("invalid value for '" + key + "': '" + raw + "' (using " + def + ")");
             return def;
         }
     }
-
-    private static final java.util.Set<String> KNOWN_KEYS = java.util.Set.of(
-        "enabled", "switch-margin-blocks", "switch-cooldown-ms", "freeze-ms",
-        "freeze-hold-actions", "freeze-hold-movement", "announce-switches",
-        "chunk-cache-max-chunks", "chunk-cache-max-megabytes", "max-offset-blocks",
-        "rewrite-commands", "log-switches");
 
     private static void warnUnknownKeys(Properties props, List<String> warnings) {
         for (String key : props.stringPropertyNames()) {
@@ -165,10 +174,6 @@ public final class HauteurConfig {
                 warnings.add("unknown config key '" + key + "' (ignored; see the sample file for valid keys)");
             }
         }
-    }
-
-    private static long longVal(Properties props, String key, long def) {
-        return longVal(props, key, def, null);
     }
 
     private static long longVal(Properties props, String key, long def, List<String> warnings) {
@@ -179,9 +184,7 @@ public final class HauteurConfig {
         try {
             return Long.parseLong(raw.trim());
         } catch (NumberFormatException e) {
-            if (warnings != null) {
-                warnings.add("invalid value for '" + key + "': '" + raw + "' (using " + def + ")");
-            }
+            warnings.add("invalid value for '" + key + "': '" + raw + "' (using " + def + ")");
             return def;
         }
     }
