@@ -8,7 +8,6 @@ import org.geysermc.geyser.api.event.bedrock.SessionJoinEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserDefineCommandsEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserPostInitializeEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserPostReloadEvent;
-import org.geysermc.geyser.api.event.lifecycle.GeyserPreReloadEvent;
 import org.geysermc.geyser.api.event.lifecycle.GeyserShutdownEvent;
 import org.geysermc.geyser.api.extension.Extension;
 
@@ -42,16 +41,15 @@ public final class HauteurExtension implements Extension {
         core.start();
     }
 
+    /**
+     * Re-reads the configuration and applies it live (handlers consult the core on every packet, so no reconnect
+     * is needed for margins or timeouts). Only the post-reload event is used. Geyser fires the pre-reload event
+     * before it disables and re-enables its own bootstrap, so a wrap or attach made there would be replaced
+     * straight away; running the same reload again after Geyser is back is idempotent and correct. See
+     * docs/adr/0004-reload-lifecycle.md.
+     */
     @Subscribe
     public void onPostReload(GeyserPostReloadEvent event) {
-        // Covers "enabled mid-session via /geyser extensions" and re-enable after a reload.
-        core.reload();
-    }
-
-    @Subscribe
-    public void onPreReload(GeyserPreReloadEvent event) {
-        // Re-read config and apply live: handlers consult this core per packet, so no reconnect is
-        // needed to pick up new margins or timeouts. Disabling detaches everything cleanly.
         core.reload();
     }
 

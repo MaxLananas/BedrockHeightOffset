@@ -5,6 +5,7 @@ import io.github.maxlananas.hauteur.pipeline.GeyserDiagnostics;
 import io.github.maxlananas.hauteur.pipeline.PipelineSettings;
 import io.github.maxlananas.hauteur.session.HauteurSession;
 import io.github.maxlananas.hauteur.session.GeyserPlayerSession;
+import io.github.maxlananas.hauteur.translate.CommandYRewrite;
 import io.github.maxlananas.hauteur.world.ShiftedWorldManager;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -18,10 +19,12 @@ import org.geysermc.mcprotocollib.network.session.NetworkSession;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -37,10 +40,9 @@ public final class HauteurCore implements PipelineSettings {
 
     private final HauteurExtension extension;
     private final Map<GeyserSession, HauteurSession> states = new ConcurrentHashMap<>();
-    private volatile HauteurConfig config = HauteurConfig.loadDefault();
+    private volatile HauteurConfig config;
     /** Derived, allocation-free hot-path view of the config; rewritten only when config reloads. */
-    private volatile io.github.maxlananas.hauteur.translate.CommandYRewrite.Config commandConfig =
-        deriveCommandConfig(HauteurConfig.loadDefault());
+    private volatile CommandYRewrite.Config commandConfig;
     private volatile boolean worldManagerShifted;
     private volatile boolean running;
     /** Saved reflection handle for the bootstrap field we replaced, for clean restore. */
@@ -51,6 +53,9 @@ public final class HauteurCore implements PipelineSettings {
 
     public HauteurCore(HauteurExtension extension) {
         this.extension = extension;
+        HauteurConfig defaults = HauteurConfig.loadDefault();
+        this.config = defaults;
+        this.commandConfig = deriveCommandConfig(defaults);
     }
 
     public void start() {
@@ -168,17 +173,6 @@ public final class HauteurCore implements PipelineSettings {
         }
     }
 
-    /** Per-type quarantine registry (deterministic transform failures), for /hauteur doctor. */
-    private final Map<String, String> quarantinedTypes = new ConcurrentHashMap<>();
-
-    public void reportQuarantinedType(String typeName, String reason) {
-        quarantinedTypes.put(typeName, reason);
-    }
-
-    public Map<String, String> quarantinedTypes() {
-        return quarantinedTypes;
-    }
-
     /** Removes every pipeline handler. Session states are kept; the handler's removal resets the offset. */
     private void detachAll() {
         for (Map.Entry<GeyserSession, HauteurSession> e : states.entrySet()) {
@@ -214,14 +208,12 @@ public final class HauteurCore implements PipelineSettings {
         return config;
     }
 
-    public io.github.maxlananas.hauteur.translate.CommandYRewrite.Config commandConfig() {
+    public CommandYRewrite.Config commandConfig() {
         return commandConfig;
     }
 
-    private static io.github.maxlananas.hauteur.translate.CommandYRewrite.Config deriveCommandConfig(
-        HauteurConfig config) {
-        return new io.github.maxlananas.hauteur.translate.CommandYRewrite.Config(
-            !config.rewriteCommands.isEmpty(), config.rewriteCommands);
+    private static CommandYRewrite.Config deriveCommandConfig(HauteurConfig config) {
+        return new CommandYRewrite.Config(!config.rewriteCommands.isEmpty(), config.rewriteCommands);
     }
 
     public HauteurSession state(GeyserSession session) {
@@ -291,8 +283,17 @@ public final class HauteurCore implements PipelineSettings {
             return;
         }
         long delayMs = attempt < 10 ? 100L : 500L;
-        GeyserImpl.getInstance().getScheduledThread().schedule(
-            () -> installOrRetry(session, state, attempt), delayMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        GeyserImpl geyser = GeyserImpl.getInstance();
+        if (geyser == null) {
+            extension.logger().warning("[Hauteur] Geyser is not running; no attach for this player");
+            return;
+        }
+        try {
+            geyser.getScheduledThread().schedule(
+                () -> installOrRetry(session, state, attempt), delayMs, TimeUnit.MILLISECONDS);
+        } catch (RejectedExecutionException e) {
+            // Geyser's scheduler is shutting down (a retry raced with disable): there is nothing left to attach to.
+        }
     }
 
     private void installOrRetry(GeyserSession session, HauteurSession state, int attempt) {
@@ -431,8 +432,8 @@ public final class HauteurCore implements PipelineSettings {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             for (Field f : c.getDeclaredFields()) {
                 if (WorldManager.class.isAssignableFrom(f.getType())
-                    && !java.lang.reflect.Modifier.isStatic(f.getModifiers())
-                    && !java.lang.reflect.Modifier.isFinal(f.getModifiers())) {
+                    && !Modifier.isStatic(f.getModifiers())
+                    && !Modifier.isFinal(f.getModifiers())) {
                     return f;
                 }
             }
