@@ -1,7 +1,6 @@
 package io.github.maxlananas.altus.pipeline;
 
 import io.github.maxlananas.altus.AltusConfig;
-import io.github.maxlananas.altus.AltusCore;
 import io.github.maxlananas.altus.LogSanitizer;
 import io.github.maxlananas.altus.session.ChunkCache;
 import io.github.maxlananas.altus.session.AltusSession;
@@ -15,8 +14,6 @@ import io.netty.channel.ChannelPromise;
 import org.cloudburstmc.math.vector.Vector3d;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.math.vector.Vector3i;
-import org.geysermc.geyser.GeyserLogger;
-import org.geysermc.geyser.session.GeyserSession;
 import org.geysermc.mcprotocollib.protocol.codec.MinecraftPacket;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PlayerAction;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PositionElement;
@@ -70,10 +67,10 @@ public final class AltusHandler extends ChannelDuplexHandler {
     /** Combined cap for the held queue: 400 ms of freeze cannot legitimately produce more. */
     private static final int HELD_QUEUE_LIMIT = 48;
 
-    private final GeyserSession session;
+    private final PlayerSession session;
     private final AltusSession state;
-    private final AltusCore core;
-    private final GeyserLogger logger;
+    private final PipelineSettings core;
+    private final Diagnostics logger;
     private final ChannelHandlerContext managerContext;
     private final HeldQueue held;
     /** Serializes freeze transitions with outbound writes; see the class javadoc. */
@@ -83,8 +80,8 @@ public final class AltusHandler extends ChannelDuplexHandler {
     private volatile Set<Class<?>> quarantined;
     private boolean loggedTransformError;
 
-    public AltusHandler(GeyserSession session, AltusSession state, AltusCore core,
-                            GeyserLogger logger, ChannelHandlerContext managerContext) {
+    public AltusHandler(PlayerSession session, AltusSession state, PipelineSettings core,
+                        Diagnostics logger, ChannelHandlerContext managerContext) {
         this.session = java.util.Objects.requireNonNull(session);
         this.state = java.util.Objects.requireNonNull(state);
         this.core = java.util.Objects.requireNonNull(core);
@@ -137,7 +134,7 @@ public final class AltusHandler extends ChannelDuplexHandler {
             state.frozen = false;
             state.offset = 0;
             state.frozenFrameOffset = 0;
-            if (session.getPlayerEntity() != null) {
+            if (session.hasPlayerEntity()) {
                 replayWorld(w, 0);
                 if (session.isSpawned()) {
                     injectPlayerSnap(realY, 0);
@@ -508,7 +505,7 @@ public final class AltusHandler extends ChannelDuplexHandler {
             AltusSession.WindowConfig w = state.window;
             ChannelHandlerContext self = ctx;
             if (self == null || !self.channel().isActive() || !core.running() || w == null || !w.needed()
-                || state.frozen || generation != state.worldGeneration || session.getPlayerEntity() == null) {
+                || state.frozen || generation != state.worldGeneration || !session.hasPlayerEntity()) {
                 return;
             }
             AltusConfig config = core.config();
@@ -678,7 +675,7 @@ public final class AltusHandler extends ChannelDuplexHandler {
                 int blockId;
                 try {
                     // The wrapped world manager adds the current offset, so this reads the real block.
-                    blockId = session.getGeyser().getWorldManager().getBlockAt(session, raw.getX(), clientY, raw.getZ());
+                    blockId = session.blockAt(raw.getX(), clientY, raw.getZ());
                 } catch (Throwable t) {
                     continue;
                 }
@@ -694,7 +691,7 @@ public final class AltusHandler extends ChannelDuplexHandler {
      * block-entity changes journaled since it arrived, so that edits made before the switch survive it.
      */
     private void replayWorld(AltusSession.WindowConfig w, int target) {
-        Vector3f p = session.getPlayerEntity().position();
+        Vector3f p = session.playerPosition();
         for (ChunkCache.Entry entry : state.chunkCache.nearestFirst((int) p.getX(), (int) p.getZ())) {
             try {
                 WindowedChunks.Outcome windowed = WindowedChunks.window(entry.packet(), w.chunkParams(target));
@@ -729,15 +726,14 @@ public final class AltusHandler extends ChannelDuplexHandler {
     }
 
     private void injectPlayerSnap(double realY, int newOffset) {
-        var entity = session.getPlayerEntity();
-        Vector3f p = entity.position();
+        Vector3f p = session.playerPosition();
         // X/Z are never windowed; only Y moves. clientY = realY - offset.
         double clientY = realY - newOffset;
         Vector3d targetPos = Vector3d.from(p.getX(), clientY, p.getZ());
         // ClientboundTeleportEntityPacket for the player id is what Geyser maps to a TELEPORT MovePlayer for the
         // Bedrock client. It is not a server teleport, so it carries no teleport id and nothing is acknowledged.
         managerContext.fireChannelRead(new ClientboundTeleportEntityPacket(
-            state.playerJavaId, targetPos, Vector3d.ZERO, entity.getYaw(), entity.getPitch(), List.of(), true));
+            state.playerJavaId, targetPos, Vector3d.ZERO, session.playerYaw(), session.playerPitch(), List.of(), true));
         if (state.watch) {
             watch("IN", "SnapTeleport", "clientY=" + (int) clientY);
         }

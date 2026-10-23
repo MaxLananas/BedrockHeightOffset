@@ -1,7 +1,10 @@
 package io.github.maxlananas.altus;
 
 import io.github.maxlananas.altus.pipeline.AltusHandler;
+import io.github.maxlananas.altus.pipeline.GeyserDiagnostics;
+import io.github.maxlananas.altus.pipeline.PipelineSettings;
 import io.github.maxlananas.altus.session.AltusSession;
+import io.github.maxlananas.altus.session.GeyserPlayerSession;
 import io.github.maxlananas.altus.world.ShiftedWorldManager;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -28,7 +31,7 @@ import java.util.concurrent.TimeUnit;
  * server-plugin dependency - this class only touches Geyser core, mcprotocollib and netty, which the
  * extension classloader resolves from Geyser's own jars (parent-first), so identity always matches.
  */
-public final class AltusCore {
+public final class AltusCore implements PipelineSettings {
     /** What the packet-shape assumptions in docs/ have been verified against; shown by /altus doctor. */
     public static final String TESTED_AGAINST = "Geyser 2.11.2-SNAPSHOT @ 2026-09-08; docs/PACKET-MATRIX.md carries the audit details";
 
@@ -327,7 +330,8 @@ public final class AltusCore {
         }
         ChannelHandlerContext managerContext = pipeline.context(NetworkConstants.MANAGER_NAME);
         pipeline.addAfter(NetworkConstants.CODEC_NAME, AltusHandler.HANDLER_NAME,
-            new AltusHandler(session, state, this, GeyserImpl.getInstance().getLogger(), managerContext));
+            new AltusHandler(new GeyserPlayerSession(session), state, this,
+                new GeyserDiagnostics(GeyserImpl.getInstance().getLogger()), managerContext));
         return true;
     }
 

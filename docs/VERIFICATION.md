@@ -31,13 +31,21 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
 
 ### What the JUnit suite does not cover
 
-- `AltusHandler` is not exercised end to end. Its tests would need a live `GeyserSession`, which cannot be
-  constructed without a running Geyser. The switch, freeze, flush and ghost-revert logic is therefore verified by
-  review and by the manual procedure below, not by automated tests. This is a known gap.
-- `AltusCore` installation, the world-manager wrapper, and reload paths are not tested.
-- The return-to-real-space path on detach (`AltusHandler.handlerRemoved`) is not tested. It needs a live
-  `GeyserSession` and a Netty pipeline. It is covered by the manual procedure, step 9, only.
-- No test runs a real packet stream through Geyser's translators.
+- `AltusHandlerTest` runs the handler on an `EmbeddedChannel` with the production layout (`altus` before the
+  manager). It covers: passthrough at offset 0; a switch on high movement with the snap at `realY - offset`; a
+  movement held across the freeze and replayed in the new frame; detach returning to real space (chunk replay,
+  then snap at the last real Y); no snap on a closed channel; no switch when windowing is not needed, when the
+  extension is stopped, or without a player entity; no snap for a client that has not spawned.
+  The handler depends on the `PlayerSession`, `PipelineSettings` and `Diagnostics` interfaces, not on Geyser
+  types, so these tests need no Geyser runtime.
+
+### What the JUnit suite does not cover
+
+- `AltusCore` installation, the world-manager wrapper, and reload paths are not tested. They need a running Geyser.
+  `GeyserPlayerSession` and `GeyserDiagnostics` are thin delegations and are checked only by compilation and the
+  manual procedure.
+- No test runs a real packet stream through Geyser's translators, and no test runs against a real Bedrock client.
+  The manual procedure, step 9, covers the detach path on a real client.
 
 ## Manual procedure (not automated)
 

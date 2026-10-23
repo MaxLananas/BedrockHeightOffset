@@ -22,6 +22,8 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
   distribution is not yet pinned by checksum; see `.mvn/wrapper/maven-wrapper.properties`.
 - Test results are published as check-run annotations: one totals line and one error per failing test. They stay
   readable when the job log is not.
+- The pipeline no longer depends on Geyser session types. It reads the session, settings and logger through
+  small interfaces (`PlayerSession`, `PipelineSettings`, `Diagnostics`) with Geyser adapters. This is internal.
 
 ### Fixed
 

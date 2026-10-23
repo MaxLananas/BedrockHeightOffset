@@ -31,6 +31,11 @@ The handler sits directly after mcprotocollib's `codec` and before Geyser's `man
 decoded in real space. Outbound packets reach it before serialization, in client space. The handler is the
 only place where absolute Y is translated for the session.
 
+The handler does not depend on Geyser types. It reads the session through `pipeline/PlayerSession`, the
+configuration through `pipeline/PipelineSettings` (implemented by `AltusCore`), and reports through
+`pipeline/Diagnostics`. Production adapters are `session/GeyserPlayerSession` and `pipeline/GeyserDiagnostics`.
+That seam is what lets `AltusHandlerTest` run the real pipeline without a Geyser runtime.
+
 Writes that Geyser makes on the Java side pass through the handler too. Packets the handler injects go to
 Geyser with `managerContext.fireChannelRead`, so they are not translated again.
 
@@ -158,7 +163,8 @@ diagnosed.
 - **Detaching a shifted client:** removing the handler while the offset is non-zero on a live channel (disable,
   reload, shutdown) first gives the client its real-space view back: cached chunks are replayed at offset 0 and
   the player is snapped to the last real Y. Without this, the client would stay in a frame that nothing translates
-  any more. Nothing is sent on a closed channel. This path is not covered by an automated test (see VERIFICATION).
+  any more. Nothing is sent on a closed channel. Covered by `AltusHandlerTest` on an embedded channel; the
+  real-client behaviour is covered by the manual procedure (see VERIFICATION).
 - **Shutdown:** the sweeper is cancelled, handlers are removed, states are cleared, and the world manager is restored.
 - **Dimension read failure:** the window is re-derived from live data. If that read fails, the previous snapshot is
   kept, so windowing does not switch off while the client is shifted.
