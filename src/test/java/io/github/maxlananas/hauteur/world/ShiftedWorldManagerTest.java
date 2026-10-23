@@ -1,6 +1,7 @@
 package io.github.maxlananas.hauteur.world;
 
 import org.cloudburstmc.math.vector.Vector3i;
+import org.geysermc.erosion.util.BlockPositionIterator;
 import org.geysermc.geyser.level.WorldManager;
 import org.geysermc.geyser.session.GeyserSession;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.GameMode;
@@ -11,6 +12,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -107,4 +109,25 @@ class ShiftedWorldManagerTest {
         assertSame(world, wrapper.delegate());
         assertTrue(wrapper.hasOwnChunkCache());
     }
+
+    @Test
+    void batchReadsAreShiftedPerPosition() {
+        // Two positions in one column: y = 0 and y = 1 (zxy iteration order).
+        RecordingWorld world = new RecordingWorld();
+        ShiftedWorldManager wrapper = wrap(world, new AtomicInteger(16));
+
+        int[] blocks = wrapper.getBlocksAt(null, BlockPositionIterator.fromMinMax(0, 0, 0, 0, 1, 0));
+        assertArrayEquals(new int[] {16, 17}, blocks);
+        assertEquals(List.of(16, 17), world.readYs);
+    }
+
+    @Test
+    void batchReadsWithoutOffsetUseTheDelegatePath() {
+        RecordingWorld world = new RecordingWorld();
+        ShiftedWorldManager wrapper = wrap(world, new AtomicInteger(0));
+
+        assertArrayEquals(new int[] {0, 1}, wrapper.getBlocksAt(null, BlockPositionIterator.fromMinMax(0, 0, 0, 0, 1, 0)));
+        assertEquals(List.of(0, 1), world.readYs);
+    }
 }
+
