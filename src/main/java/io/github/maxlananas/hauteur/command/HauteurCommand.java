@@ -8,7 +8,9 @@ import org.geysermc.geyser.api.command.Command;
 import org.geysermc.geyser.session.GeyserSession;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * {@code /hauteur} (aliases {@code /sw}, {@code /bho}) - per-player state inspection and development
@@ -34,7 +36,7 @@ public final class HauteurCommand {
     }
 
     private static void execute(HauteurCore core, GeyserSession session, String[] args) {
-        String sub = args.length == 0 ? "info" : args[0].toLowerCase();
+        String sub = args.length == 0 ? "info" : args[0].toLowerCase(Locale.ROOT);
         HauteurSession state = core.state(session);
         switch (sub) {
             case "info", "inspect" -> inspect(session, state);
@@ -117,7 +119,12 @@ public final class HauteurCommand {
             send(session, "§cNo session state.");
             return;
         }
-        boolean on = args.length < 2 || !args[1].equalsIgnoreCase("off");
+        String mode = args.length < 2 ? "on" : args[1].toLowerCase(Locale.ROOT);
+        if (!mode.equals("on") && !mode.equals("off")) {
+            send(session, "§7Usage: §f/hauteur watch <on|off>");
+            return;
+        }
+        boolean on = mode.equals("on");
         state.watch = on;
         send(session, on
             ? "§aWatch on: §7every translated packet and switch is recorded; view with §f/hauteur recent§7."
@@ -148,18 +155,16 @@ public final class HauteurCommand {
         send(session, ok(core.worldManagerShifted())
             + " §7world manager wrapped (direct collision/container reads follow the window): §f"
             + core.worldManagerShifted());
-        var quarantined = core.quarantinedTypes();
-        send(session, ok(quarantined.isEmpty())
-            + " §7packet-type quarantines: §f" + (quarantined.isEmpty() ? "none"
-                : quarantined.size() + " -> " + String.join(", ", quarantined.keySet())));
-        if (!quarantined.isEmpty()) {
-            for (Map.Entry<String, String> e : quarantined.entrySet()) {
-                send(session, "§c✗ §7" + e.getKey() + ": §f" + e.getValue());
-            }
-        }
         if (state == null) {
             send(session, "§c✗ no session state (joined before the extension loaded? rejoin)");
             return;
+        }
+        var quarantined = state.quarantine();
+        send(session, ok(quarantined.isEmpty())
+            + " §7packet-type quarantines (this session): §f" + (quarantined.isEmpty() ? "none"
+                : quarantined.size() + " -> " + String.join(", ", quarantined.keySet())));
+        for (Map.Entry<String, String> e : quarantined.entrySet()) {
+            send(session, "§c✗ §7" + e.getKey() + ": §f" + e.getValue());
         }
         boolean pipelineLive = state.channel != null && state.channel.isActive()
             && state.channel.pipeline().get(io.github.maxlananas.hauteur.pipeline.HauteurHandler.HANDLER_NAME) != null;
@@ -195,7 +200,8 @@ public final class HauteurCommand {
         send(session, ok(state.offset % 16 == 0) + " §7invariants: offset §f" + state.offset + " (section-aligned: " + (state.offset % 16 == 0) + ")"
             + " §7(world gen §f" + state.worldGeneration + "§7, backoff §f" + state.switchBackoff + "§7)");
         send(session, "§7anomaly-normalized chunk payloads: §f"
-            + (state.chunkAnomalies.sum() - state.statsBaseline[6]) + " §7(resets are yours, not the server's)");
+            + (state.chunkAnomalies.sum() - state.statsBaseline[HauteurSession.BASELINE_CHUNK_ANOMALIES])
+            + " §7(resets are yours, not the server's)");
     }
 
     private static void stats(GeyserSession session, HauteurSession state, String[] args) {
@@ -204,44 +210,56 @@ public final class HauteurCommand {
             return;
         }
         if (args.length >= 2 && args[1].equalsIgnoreCase("reset")) {
-            long[] b = state.statsBaseline;
-            b[0] = state.inTranslated.sum();
-            b[1] = state.outTranslated.sum();
-            b[2] = state.chunkWindowed.sum();
-            b[3] = state.chunkReplays.sum();
-            b[4] = state.windowSwitches.sum();
-            b[5] = state.droppedWhileFrozen.sum();
-            b[6] = state.chunkAnomalies.sum();
-            b[7] = state.actionsHeld.sum();
-            b[8] = state.heldOverflow.sum();
-            b[9] = state.freezeCount.sum();
-            b[10] = state.freezeTotalNanos.sum();
-            b[15] = 1; // marks that a reset happened, for the "since" label
+            resetStats(state);
             send(session, "§aStats baseline reset for this session.");
             return;
         }
         long[] b = state.statsBaseline;
-        long freezes = state.freezeCount.sum() - b[9];
-        long freezeNanos = state.freezeTotalNanos.sum() - b[10];
+        long freezes = state.freezeCount.sum() - b[HauteurSession.BASELINE_FREEZE_COUNT];
+        long freezeNanos = state.freezeTotalNanos.sum() - b[HauteurSession.BASELINE_FREEZE_NANOS];
         String freezeAvg = freezes > 0
             ? (freezeNanos / freezes) / 1_000L + " µs avg"
             : "no completed switch yet";
         send(session,
-            "§bHauteur stats §7(this player, since " + (b[15] == 0 ? "join" : "last reset") + "):",
-            "§7inbound packets translated: §f" + (state.inTranslated.sum() - b[0]),
-            "§7outbound packets translated: §f" + (state.outTranslated.sum() - b[1]),
-            "§7chunks windowed on arrival: §f" + (state.chunkWindowed.sum() - b[2]),
-            "§7chunk replays during window switches: §f" + (state.chunkReplays.sum() - b[3]),
-            "§7window switches: §f" + (state.windowSwitches.sum() - b[4]),
-            "§7outbound packets dropped while frozen: §f" + (state.droppedWhileFrozen.sum() - b[5]),
-            "§7anomaly-normalized chunk payloads: §f" + (state.chunkAnomalies.sum() - b[6]),
-            "§7actions/movement held across switches: §f" + (state.actionsHeld.sum() - b[7])
-                + " §7(overflow drops: §f" + (state.heldOverflow.sum() - b[8]) + "§7)",
-            "§7chunks not replayable (over cache budget): §f" + state.chunkUncacheable.sum()
-                + " §7| journal overflows (chunk evicted): §f" + state.journalOverflows.sum(),
-            "§7packets dropped on transform failure (fail closed): §f" + state.transformFailures.sum(),
+            "§bHauteur stats §7(this player, since " + (b[HauteurSession.BASELINE_RESET_MARK] == 0 ? "join" : "last reset") + "):",
+            "§7inbound packets translated: §f" + since(state.inTranslated, b, HauteurSession.BASELINE_IN_TRANSLATED),
+            "§7outbound packets translated: §f" + since(state.outTranslated, b, HauteurSession.BASELINE_OUT_TRANSLATED),
+            "§7chunks windowed on arrival: §f" + since(state.chunkWindowed, b, HauteurSession.BASELINE_CHUNKS_WINDOWED),
+            "§7chunk replays during window switches: §f" + since(state.chunkReplays, b, HauteurSession.BASELINE_CHUNK_REPLAYS),
+            "§7window switches: §f" + since(state.windowSwitches, b, HauteurSession.BASELINE_WINDOW_SWITCHES),
+            "§7outbound packets dropped while frozen: §f" + since(state.droppedWhileFrozen, b, HauteurSession.BASELINE_DROPPED_WHILE_FROZEN),
+            "§7anomaly-normalized chunk payloads: §f" + since(state.chunkAnomalies, b, HauteurSession.BASELINE_CHUNK_ANOMALIES),
+            "§7actions/movement held across switches: §f" + since(state.actionsHeld, b, HauteurSession.BASELINE_ACTIONS_HELD)
+                + " §7(overflow drops: §f" + since(state.heldOverflow, b, HauteurSession.BASELINE_HELD_OVERFLOW) + "§7)",
+            "§7chunks not replayable (over cache budget): §f" + since(state.chunkUncacheable, b, HauteurSession.BASELINE_CHUNKS_UNCACHEABLE)
+                + " §7| journal overflows (chunk evicted): §f" + since(state.journalOverflows, b, HauteurSession.BASELINE_JOURNAL_OVERFLOWS),
+            "§7packets dropped on transform failure (fail closed): §f" + since(state.transformFailures, b, HauteurSession.BASELINE_TRANSFORM_FAILURES),
             "§7freeze duration: §f" + freezeAvg + " §7| last: §f" + (state.lastFreezeNanos / 1_000L) + " µs",
             "§7last frame used while frozen: §f" + state.frozenFrameOffset + " §7| now: §f" + state.offset);
+    }
+
+    /** Copies every counter that {@code stats} displays into the baseline, so later reads show what happened since. */
+    private static void resetStats(HauteurSession state) {
+        long[] b = state.statsBaseline;
+        b[HauteurSession.BASELINE_IN_TRANSLATED] = state.inTranslated.sum();
+        b[HauteurSession.BASELINE_OUT_TRANSLATED] = state.outTranslated.sum();
+        b[HauteurSession.BASELINE_CHUNKS_WINDOWED] = state.chunkWindowed.sum();
+        b[HauteurSession.BASELINE_CHUNK_REPLAYS] = state.chunkReplays.sum();
+        b[HauteurSession.BASELINE_WINDOW_SWITCHES] = state.windowSwitches.sum();
+        b[HauteurSession.BASELINE_DROPPED_WHILE_FROZEN] = state.droppedWhileFrozen.sum();
+        b[HauteurSession.BASELINE_CHUNK_ANOMALIES] = state.chunkAnomalies.sum();
+        b[HauteurSession.BASELINE_ACTIONS_HELD] = state.actionsHeld.sum();
+        b[HauteurSession.BASELINE_HELD_OVERFLOW] = state.heldOverflow.sum();
+        b[HauteurSession.BASELINE_FREEZE_COUNT] = state.freezeCount.sum();
+        b[HauteurSession.BASELINE_FREEZE_NANOS] = state.freezeTotalNanos.sum();
+        b[HauteurSession.BASELINE_CHUNKS_UNCACHEABLE] = state.chunkUncacheable.sum();
+        b[HauteurSession.BASELINE_JOURNAL_OVERFLOWS] = state.journalOverflows.sum();
+        b[HauteurSession.BASELINE_TRANSFORM_FAILURES] = state.transformFailures.sum();
+        b[HauteurSession.BASELINE_RESET_MARK] = 1;
+    }
+
+    private static long since(LongAdder counter, long[] baseline, int slot) {
+        return counter.sum() - baseline[slot];
     }
 
     private static int currentRealY(GeyserSession session, HauteurSession state) {
