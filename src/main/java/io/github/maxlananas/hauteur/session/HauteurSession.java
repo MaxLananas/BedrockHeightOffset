@@ -129,7 +129,7 @@ public final class HauteurSession {
     public final Set<Vector3i> ghostRevertPositions = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Deque<String> watchRing = new ArrayDeque<>(WATCH_RING_LIMIT);
 
-    public int playerJavaId = -1;
+    public volatile int playerJavaId = -1;
     public final AtomicBoolean switchQueued = new AtomicBoolean();
     /** True after attach exhausted its retries: the session runs untranslated; surfaced in info/doctor. */
     public volatile boolean degraded;

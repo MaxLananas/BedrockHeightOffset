@@ -2,6 +2,7 @@ package io.github.maxlananas.hauteur.command;
 
 import io.github.maxlananas.hauteur.HauteurCore;
 import io.github.maxlananas.hauteur.HauteurExtension;
+import io.github.maxlananas.hauteur.pipeline.HauteurHandler;
 import io.github.maxlananas.hauteur.session.HauteurSession;
 import io.github.maxlananas.hauteur.window.WindowRules;
 import org.geysermc.geyser.api.command.Command;
@@ -167,7 +168,7 @@ public final class HauteurCommand {
             send(session, "§c✗ §7" + e.getKey() + ": §f" + e.getValue());
         }
         boolean pipelineLive = state.channel != null && state.channel.isActive()
-            && state.channel.pipeline().get(io.github.maxlananas.hauteur.pipeline.HauteurHandler.HANDLER_NAME) != null;
+            && state.channel.pipeline().get(HauteurHandler.HANDLER_NAME) != null;
         send(session, ok(state.attached && pipelineLive)
             + " §7pipeline handler: §f" + (pipelineLive ? "attached"
                 : state.attached ? "flagged attached but not in pipeline" : "not attached (degraded)"));

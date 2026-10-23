@@ -9,8 +9,10 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
 |---|---|---|---|
 | Coordinate and codec oracle | `python3 dev/verify/oracle.py 5` | CI (`build.yml`), any machine | Python mirror of `WindowRules` and `SectionCodec`: round trips, reachable-window formula, switch cadence, reslice semantics, malformed-input behaviour. Five randomized rounds. |
 | Compile and JUnit | `./mvnw -B verify` (JDK 21, Maven 3.9.11 through the wrapper) | CI, on every push | Compiles against Geyser `2.11.2-SNAPSHOT` (resolved from the OpenGeyser repository) and runs the JUnit suite. |
-| Test summary | `dev/verify/surefire_summary.py` | CI job summary | Per-suite counts read from the Surefire XML. Skipped tests must be justified. |
-| Release consistency | `dev/release/check_release.py vX.Y.Z` | Release workflow | Tag equals `pom.xml` version; changelog section exists; tagged commit is on `main`. |
+| Python tooling tests | `python3 -m unittest discover -s dev/verify -p 'test_*.py'` and the same for `dev/release` | CI (`build.yml`), any machine | The Surefire summary (unreadable reports, table escaping, usage errors) and the release check (SNAPSHOT, tag form, changelog bounds, exit codes). |
+| Benchmark smoke | `javac` on `SectionCodec` and `dev/bench/SectionCodecBench.java`, then a 50-iteration run | CI | The benchmark still builds and its payloads still parse without anomaly. It is not a timing; see the Measured section. |
+| Test summary | `dev/verify/surefire_summary.py` | CI job summary | Per-suite counts read from the Surefire XML. Skipped tests must be justified. An unreadable report is named and excluded from the totals. |
+| Release consistency | `dev/release/check_release.py vX.Y.Z` | Release workflow | Tag equals `pom.xml` version, which is not a `-SNAPSHOT`; changelog section exists; tagged commit is on `main`. |
 
 ### What the JUnit suite covers
 
@@ -25,7 +27,11 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
   shift is exact in both directions; relative quantities survive; chunk re-homing and block-entity pruning.
 - `session/HauteurSessionTest`, `window/WindowRulesTest`, `chunk/SectionCodec*Test`,
   `pipeline/HeldQueueTest`: window math, codec tolerance and fuzzing, the held-queue contract.
-- `LogSanitizerTest`: player-name sanitizing (control characters, cut length, surrogate-safe cut).
+- `LogSanitizerTest`: player-name sanitizing (control characters, bidi and zero-width characters, cut length,
+  surrogate-safe cut).
+- `translate/PositionCoverageTest`, `session/HauteurSessionTest` (additions): the plain chat command is dropped
+  while frozen and rewritten otherwise; the quarantine is per session and keeps the first error; the stats
+  baseline slots are distinct.
 - `HauteurConfigTest`: clamping, a malformed `\u` escape reported as an I/O error (the extension keeps its
   defaults), strict booleans (`freeze-hold-actions=flase` is reported, not silently false),
   sample file round trip.

@@ -123,10 +123,12 @@ Reproduce the automated checks:
 
 ```sh
 python3 dev/verify/oracle.py 5   # coordinate-math and codec oracle, no dependencies
+python3 -m unittest discover -s dev/verify -p 'test_*.py'   # test summary tool
+python3 -m unittest discover -s dev/release -p 'test_*.py'  # release check
 ./mvnw -B verify               # compiles against Geyser, runs JUnit (Java 21)
 ```
 
-CI runs both on every push (`.github/workflows/build.yml`) and publishes the Surefire summary on the job page.
+CI runs all of them on every push (`.github/workflows/build.yml`) and publishes the Surefire summary on the job page.
 The current state of each check is in [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 ## Reporting problems
