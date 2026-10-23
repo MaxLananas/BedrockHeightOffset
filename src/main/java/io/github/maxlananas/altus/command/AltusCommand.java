@@ -91,6 +91,20 @@ public final class AltusCommand {
             send(session, "§cNot a number: " + args[1]);
             return;
         }
+        AltusSession.WindowConfig w = state.window;
+        if (w == null) {
+            send(session, "§cDimension bounds not read yet; rejoin to refresh.");
+            return;
+        }
+        if (!w.needed()) {
+            send(session, "§7Windowing is not needed for this world; there is nothing to move.");
+            return;
+        }
+        // NaN and infinities are not positions; out-of-dimension values would snap the client outside the world.
+        if (!Double.isFinite(realY) || realY < w.javaMinY() || realY >= w.javaMaxY()) {
+            send(session, "§cReal Y must be a number from " + w.javaMinY() + " to " + (w.javaMaxY() - 1) + ".");
+            return;
+        }
         if (!core.forceWindow(session, realY)) {
             send(session, "§cAltus is not attached to this session; nothing to move.");
             return;
@@ -180,7 +194,7 @@ public final class AltusCommand {
         }
         send(session, ok(state.offset % 16 == 0) + " §7invariants: offset §f" + state.offset + " (section-aligned: " + (state.offset % 16 == 0) + ")"
             + " §7(world gen §f" + state.worldGeneration + "§7, backoff §f" + state.switchBackoff + "§7)");
-        send(session, ok(true) + " §7anomaly-normalized chunk payloads: §f"
+        send(session, "§7anomaly-normalized chunk payloads: §f"
             + (state.chunkAnomalies.sum() - state.statsBaseline[6]) + " §7(resets are yours, not the server's)");
     }
 
@@ -201,16 +215,19 @@ public final class AltusCommand {
             b[7] = state.actionsHeld.sum();
             b[8] = state.heldOverflow.sum();
             b[9] = state.freezeCount.sum();
+            b[10] = state.freezeTotalNanos.sum();
+            b[15] = 1; // marks that a reset happened, for the "since" label
             send(session, "§aStats baseline reset for this session.");
             return;
         }
         long[] b = state.statsBaseline;
         long freezes = state.freezeCount.sum() - b[9];
+        long freezeNanos = state.freezeTotalNanos.sum() - b[10];
         String freezeAvg = freezes > 0
-            ? (state.freezeTotalNanos.sum() / freezes) / 1_000L + " µs avg"
+            ? (freezeNanos / freezes) / 1_000L + " µs avg"
             : "no completed switch yet";
         send(session,
-            "§bAltus stats §7(this player, since " + (b[4] == 0 ? "join" : "last reset") + "):",
+            "§bAltus stats §7(this player, since " + (b[15] == 0 ? "join" : "last reset") + "):",
             "§7inbound packets translated: §f" + (state.inTranslated.sum() - b[0]),
             "§7outbound packets translated: §f" + (state.outTranslated.sum() - b[1]),
             "§7chunks windowed on arrival: §f" + (state.chunkWindowed.sum() - b[2]),

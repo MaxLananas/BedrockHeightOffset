@@ -27,6 +27,10 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 
 ### Fixed
 
+- `/altus window` accepted `NaN`, infinite and out-of-dimension values, and the handler could anchor on a non-finite
+  Y. Such a value could snap the client outside the world on detach. Both now refuse it, and a non-finite client Y
+  drops the packet without moving the anchor.
+- `/altus stats reset` did not reset the freeze-time total, so the average freeze after a reset mixed two periods.
 - Packets held during a window switch were written but never flushed. They could wait in Netty's outbound
   buffer until the next packet from Geyser, which may never come if the player stops moving. The freeze now ends
   with a flush.

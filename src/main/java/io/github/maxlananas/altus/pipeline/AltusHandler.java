@@ -248,10 +248,13 @@ public final class AltusHandler extends ChannelDuplexHandler {
     private void inboundAuthoritative(ChannelHandlerContext ctx, MinecraftPacket packet, double rawY, boolean relativeY) {
         if (appliesToPlayer()) {
             double realY = relativeY ? state.lastSeenRealY + rawY : rawY;
-            synchronized (freezeLock) {
-                state.lastSeenRealY = realY;
+            // A non-finite Y is never an anchor: it would poison the frame resolver and any later snap.
+            if (Double.isFinite(realY)) {
+                synchronized (freezeLock) {
+                    state.lastSeenRealY = realY;
+                }
+                requestSwitch(realY, true);
             }
-            requestSwitch(realY, true);
         }
         translateInbound(ctx, packet);
     }
@@ -370,6 +373,11 @@ public final class AltusHandler extends ChannelDuplexHandler {
             ctx.write(packet, promise);
             return;
         }
+        if (!Double.isFinite(clientY)) {
+            // No real Y can be derived, so the packet cannot be placed in a frame. Drop it and keep the anchor.
+            dropForFailure(packet, promise);
+            return;
+        }
         int offset = state.offset;
         double realY = clientY + offset;
         state.lastSeenRealY = realY;
@@ -456,7 +464,7 @@ public final class AltusHandler extends ChannelDuplexHandler {
      *                      because the client is already at that position
      */
     private void requestSwitch(double realY, boolean authoritative) {
-        if (!core.running()) {
+        if (!core.running() || !Double.isFinite(realY)) {
             return;
         }
         AltusSession.WindowConfig w = state.window;
@@ -547,7 +555,9 @@ public final class AltusHandler extends ChannelDuplexHandler {
     /** Operator-initiated exact-window move ({@code /altus window <realY>}); same machinery, given target. */
     public void forceWindow(double realY) {
         ChannelHandlerContext self = ctx;
-        if (self == null) {
+        AltusSession.WindowConfig w = state.window;
+        // The command validates its input too; this keeps the handler safe for any other caller.
+        if (self == null || w == null || !Double.isFinite(realY) || realY < w.javaMinY() || realY >= w.javaMaxY()) {
             return;
         }
         long generation = state.worldGeneration;

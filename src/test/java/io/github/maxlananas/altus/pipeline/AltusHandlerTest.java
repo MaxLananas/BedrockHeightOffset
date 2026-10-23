@@ -325,6 +325,34 @@ class AltusHandlerTest {
     }
 
     @Test
+    void nonFiniteClientYIsDroppedAndNeverBecomesTheAnchor() {
+        Rig rig = new Rig(windowNeeded());
+
+        assertNull(rig.sendMove(rig.move(Double.NaN)), "no real Y can be derived, so nothing is sent");
+        assertNull(rig.sendMove(rig.move(Double.POSITIVE_INFINITY)));
+        assertEquals(0, rig.state.offset);
+        assertEquals(0.0, rig.state.lastSeenRealY, "the anchor is unchanged");
+        assertEquals(0, rig.state.windowSwitches.sum());
+        assertTrue(rig.drainInbound().isEmpty());
+    }
+
+    @Test
+    void forceWindowAcceptsOnlyPositionsInsideTheDimension() {
+        Rig rig = new Rig(windowNeeded());
+
+        rig.handler.forceWindow(Double.NaN);
+        rig.handler.forceWindow(Double.POSITIVE_INFINITY);
+        rig.handler.forceWindow(400); // above javaMaxY (320)
+        assertEquals(0, rig.state.offset, "invalid targets never move the window or snap the client");
+        assertTrue(rig.drainInbound().isEmpty());
+
+        // Positive control: a valid target does move the window, so the rejections above are meaningful.
+        rig.handler.forceWindow(HIGH_REAL_Y);
+        assertEquals(TARGET_OFFSET, rig.state.offset);
+        assertEquals(1, rig.state.windowSwitches.sum());
+    }
+
+    @Test
     void switchWithoutSpawnedClientDoesNotSnap() {
         Rig rig = new Rig(windowNeeded());
         rig.session.spawned = false;
