@@ -1,41 +1,107 @@
 #!/usr/bin/env python3
-"""Print a Markdown summary of Surefire XML reports (for $GITHUB_STEP_SUMMARY).
+"""Reports Surefire results for CI.
 
-Usage: surefire_summary.py [report-dir]
+Usage:
+  surefire_summary.py [report-dir]              Markdown summary (for $GITHUB_STEP_SUMMARY).
+  surefire_summary.py --annotate [report-dir]   GitHub workflow commands: one notice with the totals,
+                                                and one error annotation per failing or erroring test.
 
-Exits 0 even when no reports exist, so it can run after a failed build; the build step carries the
-failure. The counts come straight from the XML written by Surefire, never from the console log.
+Both modes exit 0 even when no reports exist, so they can run after a failed build; the build step carries
+the failure. The counts come straight from the XML written by Surefire, never from the console log.
+Annotations are readable through the check-run API even when the job logs are not.
 """
 import glob
 import os
 import sys
 import xml.etree.ElementTree as ET
 
+DEFAULT_DIR = "target/surefire-reports"
+COUNTERS = ("tests", "failures", "errors", "skipped")
 
-def main() -> int:
-    report_dir = sys.argv[1] if len(sys.argv) > 1 else "target/surefire-reports"
-    files = sorted(glob.glob(os.path.join(report_dir, "TEST-*.xml")))
-    print("## Test results")
-    if not files:
-        print("No Surefire reports found (the build may have failed before tests ran).")
-        return 0
-    totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
-    rows = []
-    for path in files:
-        suite = ET.parse(path).getroot()
-        counts = {k: int(suite.get(k, "0")) for k in totals}
-        for k in totals:
+
+def load_suites(report_dir):
+    """Yields (suite element) for every TEST-*.xml, in name order."""
+    for path in sorted(glob.glob(os.path.join(report_dir, "TEST-*.xml"))):
+        yield path, ET.parse(path).getroot()
+
+
+def totals_of(suites):
+    totals = {k: 0 for k in COUNTERS}
+    for _, suite in suites:
+        for k in COUNTERS:
+            totals[k] += int(suite.get(k, "0"))
+    return totals
+
+
+def summary(report_dir):
+    lines = ["## Test results"]
+    suites = list(load_suites(report_dir))
+    if not suites:
+        lines.append("No Surefire reports found (the build may have failed before tests ran).")
+        return lines
+    lines.append("| Suite | Tests | Failures | Errors | Skipped |")
+    lines.append("|---|---:|---:|---:|---:|")
+    totals = {k: 0 for k in COUNTERS}
+    for path, suite in suites:
+        counts = {k: int(suite.get(k, "0")) for k in COUNTERS}
+        for k in COUNTERS:
             totals[k] += counts[k]
-        rows.append((suite.get("name", os.path.basename(path)), counts))
-    print("| Suite | Tests | Failures | Errors | Skipped |")
-    print("|---|---:|---:|---:|---:|")
-    for name, c in rows:
-        print(f"| `{name}` | {c['tests']} | {c['failures']} | {c['errors']} | {c['skipped']} |")
-    print(f"| **Total** | **{totals['tests']}** | **{totals['failures']}** | **{totals['errors']}** | **{totals['skipped']}** |")
+        name = suite.get("name", os.path.basename(path))
+        lines.append(f"| `{name}` | {counts['tests']} | {counts['failures']} | {counts['errors']} | "
+                     f"{counts['skipped']} |")
+    lines.append(f"| **Total** | **{totals['tests']}** | **{totals['failures']}** | **{totals['errors']}** | "
+                 f"**{totals['skipped']}** |")
     if totals["skipped"]:
-        print("\n> Skipped tests are listed in the Surefire reports; each one must have a documented reason.")
+        lines.append("")
+        lines.append("> Skipped tests are listed in the Surefire reports; each one must have a documented reason.")
+    return lines
+
+
+def escape(value):
+    """Escapes a workflow-command message (%, CR, LF)."""
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def escape_property(value):
+    """Escapes a workflow-command property value (adds ':' and ',')."""
+    return escape(value).replace(":", "%3A").replace(",", "%2C")
+
+
+def annotations(report_dir):
+    out = []
+    suites = list(load_suites(report_dir))
+    if not suites:
+        out.append("::warning title=Test results::No Surefire reports found; the build failed before tests ran.")
+        return out
+    totals = totals_of(suites)
+    out.append(
+        "::notice title=Test results::"
+        + escape(f"{totals['tests']} tests, {totals['failures']} failures, {totals['errors']} errors, "
+                 f"{totals['skipped']} skipped")
+    )
+    for _, suite in suites:
+        for case in suite.iter("testcase"):
+            for kind in ("failure", "error"):
+                node = case.find(kind)
+                if node is None:
+                    continue
+                title = f"{case.get('classname', '?')}.{case.get('name', '?')}"
+                message = (node.get("message") or node.text or kind).strip().splitlines()
+                first = message[0] if message else kind
+                out.append(f"::error title={escape_property(title)}::{escape(first[:500])}")
+    return out
+
+
+def main(argv):
+    annotate = "--annotate" in argv
+    args = [a for a in argv if a != "--annotate"]
+    report_dir = args[0] if args else DEFAULT_DIR
+    if annotate:
+        print("\n".join(annotations(report_dir)))
+    else:
+        print("\n".join(summary(report_dir)))
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

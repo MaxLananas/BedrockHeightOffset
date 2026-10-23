@@ -2,6 +2,7 @@ package io.github.maxlananas.altus.pipeline;
 
 import io.github.maxlananas.altus.AltusConfig;
 import io.github.maxlananas.altus.AltusCore;
+import io.github.maxlananas.altus.LogSanitizer;
 import io.github.maxlananas.altus.session.ChunkCache;
 import io.github.maxlananas.altus.session.AltusSession;
 import io.github.maxlananas.altus.translate.InboundYTransforms;
@@ -106,10 +107,43 @@ public final class AltusHandler extends ChannelDuplexHandler {
 
     @Override
     public void handlerRemoved(ChannelHandlerContext ctx) {
+        try {
+            returnToRealSpace(ctx);
+        } catch (Throwable t) {
+            logger.error("[Altus] could not return the client to real height while detaching", t);
+        }
         state.attached = false;
         state.channel = null;
         resetTransition();
         state.resetChunkCache();
+    }
+
+    /**
+     * Detaching while the client is shifted (disable, reload, or removal on a live channel) would leave the
+     * client in a frame that no handler translates any more: its next movement would reach the server at the
+     * shifted Y. The client gets its real-space view back before the handler goes: cached chunks are replayed
+     * at offset 0 and the player is snapped to the last real Y. A closed channel has no client to correct,
+     * so nothing is sent.
+     */
+    private void returnToRealSpace(ChannelHandlerContext ctx) {
+        AltusSession.WindowConfig w = state.window;
+        if (state.offset == 0 || w == null || !w.needed() || !ctx.channel().isActive()) {
+            return;
+        }
+        synchronized (freezeLock) {
+            double realY = state.lastSeenRealY;
+            held.clearAndComplete(); // released before the snap: their promises complete, the frame is gone
+            state.ghostRevertPositions.clear();
+            state.frozen = false;
+            state.offset = 0;
+            state.frozenFrameOffset = 0;
+            if (session.getPlayerEntity() != null) {
+                replayWorld(w, 0);
+                if (session.isSpawned()) {
+                    injectPlayerSnap(realY, 0);
+                }
+            }
+        }
     }
 
     // ---------------------------------------------------------------- inbound
@@ -503,7 +537,7 @@ public final class AltusHandler extends ChannelDuplexHandler {
                 injectPlayerSnap(realY, target);
             }
             if (config.logSwitches) {
-                logger.info("[Altus] " + core.safeName(session.bedrockUsername()) + ": height window "
+                logger.info("[Altus] " + LogSanitizer.playerName(session.bedrockUsername()) + ": height window "
                     + previous + " -> " + target + " (player real Y " + (int) realY + ")");
             }
             if (config.announceSwitches) {

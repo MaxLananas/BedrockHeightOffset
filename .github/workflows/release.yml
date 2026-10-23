@@ -41,7 +41,7 @@ jobs:
       - name: Build and test against Geyser ${{ env.GEYSER_VERSION }}
         run: |
           set +e
-          mvn -B -ntp -Dmaven.repo.local="$RUNNER_TEMP/m2" \
+          ./mvnw -B -ntp -Dmaven.repo.local="$RUNNER_TEMP/m2" \
               -Dgeyser.version="$GEYSER_VERSION" verify 2>&1 | tee mvn.log
           ec=${PIPESTATUS[0]}
           if [ "$ec" -ne 0 ]; then
@@ -64,7 +64,7 @@ jobs:
             echo "commit: $GITHUB_SHA"
             echo "geyser: $GEYSER_VERSION"
             echo "java: $(java -version 2>&1 | head -1)"
-            echo "maven: $(mvn -v | head -1)"
+            echo "maven: $(./mvnw -v | head -1)"
           } > build-info.txt
       - name: Upload release candidate
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -2,8 +2,11 @@ package io.github.maxlananas.altus.session;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -51,5 +54,27 @@ class AltusSessionTest {
         assertEquals(0, state.chunkCache.size());
         state.resetChunkCache();
         assertEquals(0, state.chunkCache.size());
+    }
+
+    @Test
+    void failedRereadKeepsThePreviousWindowInsteadOfSwitchingWindowingOff() {
+        // A transient dimension-read failure must not turn windowing off while the client is shifted.
+        AtomicReference<AltusSession.WindowConfig> next =
+            new AtomicReference<>(AltusSession.WindowConfig.of(-64, 1952, -512, 1024, 0));
+        AltusSession state = new AltusSession(next::get, 16, 1 << 20);
+        state.refreshWindow();
+        assertTrue(state.window.needed());
+
+        next.set(null);
+        state.refreshWindow();
+        assertTrue(state.window.needed());
+        assertEquals(1440, state.window.maxOffset());
+    }
+
+    @Test
+    void windowStaysUnsetUntilTheDimensionHasBeenReadOnce() {
+        AltusSession state = new AltusSession(() -> null, 16, 1 << 20);
+        state.refreshWindow();
+        assertNull(state.window);
     }
 }

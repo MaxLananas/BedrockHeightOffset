@@ -7,7 +7,7 @@ provably inert when windowing is not needed, and provably correct when it is. Re
 ## Environment
 
 - JDK 21 and Maven 3.9+. Python 3 for the oracle (no dependencies).
-- `python3 dev/verify/oracle.py 5` and `mvn -B verify` must both pass. CI runs them on every push.
+- `python3 dev/verify/oracle.py 5` and `./mvnw -B verify` must both pass. CI runs them on every push.
 - Maven resolves Geyser `api` and `core` from the OpenGeyser repository (`geyser.version` in `pom.xml`). A change
   that needs a newer Geyser API bumps the pin in the same pull request and re-runs the packet-matrix audit.
 
@@ -55,7 +55,7 @@ provably inert when windowing is not needed, and provably correct when it is. Re
 
 ## Review checklist
 
-- [ ] `oracle.py` and `mvn verify` pass locally or in CI.
+- [ ] `oracle.py` and `./mvnw verify` pass locally or in CI.
 - [ ] New packet types are classified in the code, in the matrix, and in the tests.
 - [ ] Nothing is shifted that is relative.
 - [ ] Failure paths fail closed and are visible in `/altus doctor` or the logs.

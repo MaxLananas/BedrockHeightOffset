@@ -35,7 +35,7 @@ jobs:
       - name: Build and test against Geyser ${{ env.GEYSER_VERSION }}
         run: |
           set +e
-          mvn -B -ntp -Dmaven.repo.local="$RUNNER_TEMP/m2" \
+          ./mvnw -B -ntp -Dmaven.repo.local="$RUNNER_TEMP/m2" \
               -Dgeyser.version="$GEYSER_VERSION" verify 2>&1 | tee mvn.log
           ec=${PIPESTATUS[0]}
           if [ "$ec" -ne 0 ]; then
@@ -48,6 +48,11 @@ jobs:
       - name: Test summary
         if: always()
         run: python3 dev/verify/surefire_summary.py target/surefire-reports >> "$GITHUB_STEP_SUMMARY"
+      - name: Test annotations
+        # Totals and failing test names as annotations: readable through the check-run API even when the
+        # job log is not, so a red run can be diagnosed without the raw log stream.
+        if: always()
+        run: python3 dev/verify/surefire_summary.py --annotate target/surefire-reports
       - name: Upload extension jar
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

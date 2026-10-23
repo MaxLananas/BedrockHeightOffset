@@ -151,11 +151,17 @@ diagnosed.
   offset returns to 0, and the window is re-derived at the next position packet. Scheduled switches from the old
   generation are ignored.
 - **Disconnect:** the handler is removed, and its state is reset. The session state is removed by the disconnect
-  event, or by a sweeper every 60 s if the event never fired.
+  event, or by a sweeper every 60 s if the event never fired. The sweeper is cancelled on shutdown.
 - **Reload:** the cache budget is re-applied to every tracked session. Enabling re-attaches connected players.
   Disabling removes every handler and restores the world manager, while keeping session states so that a later
   re-enable does not depend on a reconnect.
-- **Shutdown:** handlers are removed, states are cleared, and the world manager is restored.
+- **Detaching a shifted client:** removing the handler while the offset is non-zero on a live channel (disable,
+  reload, shutdown) first gives the client its real-space view back: cached chunks are replayed at offset 0 and
+  the player is snapped to the last real Y. Without this, the client would stay in a frame that nothing translates
+  any more. Nothing is sent on a closed channel. This path is not covered by an automated test (see VERIFICATION).
+- **Shutdown:** the sweeper is cancelled, handlers are removed, states are cleared, and the world manager is restored.
+- **Dimension read failure:** the window is re-derived from live data. If that read fails, the previous snapshot is
+  kept, so windowing does not switch off while the client is shifted.
 
 ## World manager wrapper
 

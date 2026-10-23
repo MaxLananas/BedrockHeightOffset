@@ -54,7 +54,10 @@ public final class AltusSession {
         }
     }
 
-    /** Callback so the state can recompute its snapshot from live session data without owning the session. */
+    /**
+     * Callback so the state can recompute its snapshot from live session data without owning the session.
+     * Returns null when the dimension cannot be read right now; the caller then keeps its previous snapshot.
+     */
     public interface WindowConfigSource {
         WindowConfig recompute();
     }
@@ -105,8 +108,6 @@ public final class AltusSession {
     public volatile boolean degraded;
     /** Incremented on login/respawn; a switch or ghost queued before a world change must not act on the new world. */
     public volatile long worldGeneration;
-    /** Forced target for /altus window <realY>; -1 = none. Consumed by the next switch. */
-    public volatile double forcedRealY = -1;
     /** Cooldown multiplier (1..8) while switches keep arriving back-to-back (anti oscillation storm). */
     public volatile int switchBackoff = 1;
     /** Last completed freeze duration, and running totals for the stats view. */
@@ -133,8 +134,16 @@ public final class AltusSession {
         this.chunkCache = new ChunkCache(maxChunks, maxBytes);
     }
 
+    /**
+     * Re-derives the window from live session data. When the source cannot answer (it returns null), the
+     * previous snapshot is kept: a transient read failure must not switch windowing off while the client is
+     * shifted, because the packets would then pass untranslated in the wrong frame.
+     */
     public void refreshWindow() {
-        this.window = windowConfigSource.recompute();
+        WindowConfig next = windowConfigSource.recompute();
+        if (next != null) {
+            this.window = next;
+        }
     }
 
     public void resetChunkCache() {

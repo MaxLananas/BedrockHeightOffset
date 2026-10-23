@@ -8,7 +8,7 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
 | Check | Command | Where it runs | What it proves |
 |---|---|---|---|
 | Coordinate and codec oracle | `python3 dev/verify/oracle.py 5` | CI (`build.yml`), any machine | Python mirror of `WindowRules` and `SectionCodec`: round trips, reachable-window formula, switch cadence, reslice semantics, malformed-input behaviour. Five randomized rounds. |
-| Compile and JUnit | `mvn -B verify` (JDK 21) | CI, on every push | Compiles against Geyser `2.11.2-SNAPSHOT` (resolved from the OpenGeyser repository) and runs the JUnit suite. |
+| Compile and JUnit | `./mvnw -B verify` (JDK 21, Maven 3.9.11 through the wrapper) | CI, on every push | Compiles against Geyser `2.11.2-SNAPSHOT` (resolved from the OpenGeyser repository) and runs the JUnit suite. |
 | Test summary | `dev/verify/surefire_summary.py` | CI job summary | Per-suite counts read from the Surefire XML. Skipped tests must be justified. |
 | Release consistency | `dev/release/check_release.py vX.Y.Z` | Release workflow | Tag equals `pom.xml` version; changelog section exists; tagged commit is on `main`. |
 
@@ -34,6 +34,8 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
   constructed without a running Geyser. The switch, freeze, flush and ghost-revert logic is therefore verified by
   review and by the manual procedure below, not by automated tests. This is a known gap.
 - `AltusCore` installation, the world-manager wrapper, and reload paths are not tested.
+- The return-to-real-space path on detach (`AltusHandler.handlerRemoved`) is not tested. It needs a live
+  `GeyserSession` and a Netty pipeline. It is covered by the manual procedure, step 9, only.
 - No test runs a real packet stream through Geyser's translators.
 
 ## Manual procedure (not automated)
@@ -55,8 +57,10 @@ Minecraft Java and Bedrock versions, and the output of `/altus doctor` and `/alt
 7. **Movement across a switch.** Elytra or boat across a switch point. Expect no altitude jump after the snap.
 8. **Respawn and dimension change at altitude.** Die, respawn; use a Nether portal and return. Expect the offset
    to reset and the window to re-derive without an out-of-window jump.
-9. **Reload.** `/geyser reload` while a player is at altitude. Expect the player to stay playable; with
-   `enabled: false`, the pipeline detaches without a reconnect.
+9. **Reload and disable at altitude.** `/geyser reload` while a player is at altitude. Expect the player to stay
+   playable. Then set `enabled: false` and reload again while the player is still at altitude: expect the view to
+   return to real space and the player to land at their real height, with no snap back to a shifted position and
+   no reconnect.
 10. **Failure injection** (optional). Temporarily break a transform in a test build. Expect the affected packet type
     to be quarantined and reported by `/altus doctor`, and no packet in the wrong frame.
 11. **Performance.** Measure a switch with a full view distance (for example 24 chunks). Record replay time on the

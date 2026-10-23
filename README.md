@@ -120,7 +120,7 @@ Reproduce the automated checks:
 
 ```sh
 python3 dev/verify/oracle.py 5   # coordinate-math and codec oracle, no dependencies
-mvn -B verify                    # compiles against Geyser, runs JUnit (Java 21)
+./mvnw -B verify               # compiles against Geyser, runs JUnit (Java 21)
 ```
 
 CI runs both on every push (`.github/workflows/build.yml`) and publishes the Surefire summary on the job page.

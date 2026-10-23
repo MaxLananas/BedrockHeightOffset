@@ -19,6 +19,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Owns per-player windowing state and installs everything: the pipeline handler (per session, after Geyser
@@ -41,6 +43,8 @@ public final class AltusCore {
     /** Saved reflection handle for the bootstrap field we replaced, for clean restore. */
     private volatile Field worldManagerField;
     private volatile WorldManager originalWorldManager;
+    /** Periodic sweep of closed sessions; cancelled by {@link #stop()} so no task outlives the extension. */
+    private volatile ScheduledFuture<?> sweeper;
 
     public AltusCore(AltusExtension extension) {
         this.extension = extension;
@@ -118,6 +122,11 @@ public final class AltusCore {
 
     public void stop() {
         running = false;
+        ScheduledFuture<?> task = sweeper;
+        sweeper = null;
+        if (task != null) {
+            task.cancel(false);
+        }
         detachAll();
         states.clear();
         unwrapWorldManager();
@@ -134,8 +143,11 @@ public final class AltusCore {
      * the map bounded regardless of event-path gaps.
      */
     private void startSweeper() {
+        if (sweeper != null) {
+            return;
+        }
         try {
-            GeyserImpl.getInstance().getScheduledThread().scheduleWithFixedDelay(() -> {
+            sweeper = GeyserImpl.getInstance().getScheduledThread().scheduleWithFixedDelay(() -> {
                 try {
                     for (Map.Entry<GeyserSession, AltusSession> e : states.entrySet()) {
                         if (e.getKey().isClosed()) {
@@ -148,7 +160,7 @@ public final class AltusCore {
                 } catch (Throwable ignored) {
                     // sweep never must fail the scheduler
                 }
-            }, 60, 60, java.util.concurrent.TimeUnit.SECONDS);
+            }, 60, 60, TimeUnit.SECONDS);
         } catch (Throwable ignored) {
             // executor unavailable: states still cleaned by the disconnect event path
         }
@@ -163,30 +175,6 @@ public final class AltusCore {
 
     public Map<String, String> quarantinedTypes() {
         return quarantinedTypes;
-    }
-
-    /** Player names into logs: strip control characters (log-injection hardening, Geyser does the same). */
-    public String safeName(String name) {
-        if (name == null || name.isEmpty()) {
-            return "?";
-        }
-        int bad = -1;
-        for (int i = 0; i < name.length(); i++) {
-            char c = name.charAt(i);
-            if (c < 0x20 || c == 0x7F) {
-                bad = i;
-                break;
-            }
-        }
-        if (bad < 0) {
-            return name.length() > 32 ? name.substring(0, 32) : name;
-        }
-        StringBuilder sb = new StringBuilder(Math.min(name.length(), 32));
-        for (int i = 0; i < Math.min(name.length(), 32); i++) {
-            char c = name.charAt(i);
-            sb.append(c < 0x20 || c == 0x7F ? '?' : c);
-        }
-        return sb.toString();
     }
 
     /** Removes every pipeline handler. Session states are kept; the handler's removal resets the offset. */
@@ -310,7 +298,8 @@ public final class AltusCore {
             return;
         }
         if (attempt > 100) {
-            extension.logger().warning("[Altus] could not attach to " + session.bedrockUsername()
+            extension.logger().warning("[Altus] could not attach to "
+                + LogSanitizer.playerName(session.bedrockUsername())
                 + " (downstream pipeline not found); this player stays in real space - no windowing"
                 + " and no collision-read protection for them");
             return;
@@ -365,8 +354,8 @@ public final class AltusCore {
                 dimension.minY(), dimension.height(), config.maxOffsetBlocks);
         } catch (Throwable t) {
             extension.logger().warning("[Altus] could not read dimension bounds for "
-                + session.bedrockUsername() + ": " + t);
-            return new AltusSession.WindowConfig(false, -64, 320, -64, 384, 0);
+                + LogSanitizer.playerName(session.bedrockUsername()) + ": " + t + " (keeping the previous window)");
+            return null;
         }
     }
 
@@ -388,13 +377,12 @@ public final class AltusCore {
             Field field = findWorldManagerField(bootstrap.getClass());
             field.setAccessible(true);
             Object current = field.get(bootstrap);
-            if (current instanceof ShiftedWorldManager) {
-                // Already wrapped by a previous enable cycle (e.g. enabled -> reload -> still enabled).
-                // Treat as success: the wrap is live, re-wrapping would double-shift.
-                if (worldManagerField == null) {
-                    worldManagerField = field;
-                    originalWorldManager = null; // restore not owned by us; leave wrapped
-                }
+            if (current instanceof ShiftedWorldManager shifted) {
+                // Already wrapped by an earlier enable cycle (enabled -> reload -> still enabled). Re-wrapping
+                // would double-shift, so the existing wrap is adopted. Its delegate is the real original, which
+                // is what a later disable must restore; leaving the wrapper in place would shift reads forever.
+                this.worldManagerField = field;
+                this.originalWorldManager = shifted.delegate();
                 worldManagerShifted = true;
                 return;
             }

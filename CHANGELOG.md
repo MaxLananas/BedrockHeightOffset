@@ -16,9 +16,25 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 - Migration: `extensions/skywindow/config.properties` is copied to `extensions/altus/` on first start (the old file
   is kept). `/skywindow`, `/sw` and `/bho` remain as command aliases.
 - Licensed under the MIT License (see `LICENSE`).
+- GitHub Actions are pinned to commit SHAs, with the tag in a comment. The workflows run with read-only
+  permissions by default; only the publish job can write to releases.
+- CI, release and the README use the Maven Wrapper (`./mvnw`, Maven 3.9.11, Apache `only-mvnw` script). The
+  distribution is not yet pinned by checksum; see `.mvn/wrapper/maven-wrapper.properties`.
+- Test results are published as check-run annotations: one totals line and one error per failing test. They stay
+  readable when the job log is not.
 
 ### Fixed
 
+- Disabling or reloading the extension while a player was shifted left the client in the shifted frame, and its
+  next movement reached the server at the wrong height. The client now gets its real-space view back (cached chunks
+  replayed at offset 0, snap to the real Y) before the pipeline is removed.
+- A reload after an earlier enable could leave a world-manager wrapper that disable never restored. The original
+  manager is now adopted from the existing wrapper and restored on disable.
+- A failed dimension read replaced the window with "not needed", switching windowing off while a player was
+  shifted. The previous snapshot is kept instead.
+- Shutdown now cancels the session sweeper; its scheduled task used to outlive the extension.
+- Player names in logs go through one sanitizer: control characters are replaced, names are cut to 32 characters
+  without splitting a surrogate pair.
 - Window switches replayed the chunk as it arrived and reverted later block and block-entity edits. Each cached
   chunk now keeps a journal of those changes and replays it.
 - The chunk-cache budget was not strict: a 32-chunk exemption let it be exceeded, and light arrays were not
@@ -49,11 +65,6 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 - Build workflow publishes the Surefire test summary on the job page.
 - Logo under `assets/logo/`: a 1024 px master, PNG exports (512, 128, 32) and a monochrome variant, regenerated
   by `dev/release/export_logo.sh`. The logo replaces the earlier SkyWindow/Hypso artwork.
-
-### Changed
-
-- GitHub Actions are pinned to commit SHAs, with the tag in a comment. The workflows run with read-only
-  permissions by default; only the publish job can write to releases.
 
 ### Known limitations
 
