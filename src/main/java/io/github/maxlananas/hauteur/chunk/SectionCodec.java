@@ -140,7 +140,7 @@ public final class SectionCodec {
         // Fixed-size long array storage.
         long longs = readVarintScan(data, pos);
         pos = (int) (longs >>> 32);
-        long bytes = (long) ((int) longs) * 8L;
+        long bytes = ((int) longs) * 8L; // the int cast keeps the low 32 bits, as before
         if (bytes < 0 || bytes > data.length - pos) {
             throw new FormatException("storage array out of bounds");
         }
