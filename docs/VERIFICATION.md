@@ -26,7 +26,8 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
 - `session/HauteurSessionTest`, `window/WindowRulesTest`, `chunk/SectionCodec*Test`,
   `pipeline/HeldQueueTest`: window math, codec tolerance and fuzzing, the held-queue contract.
 - `LogSanitizerTest`: player-name sanitizing (control characters, cut length, surrogate-safe cut).
-- `HauteurConfigTest`: clamping, strict booleans (`freeze-hold-actions=flase` is reported, not silently false),
+- `HauteurConfigTest`: clamping, a malformed `\\u` escape reported as an I/O error (the extension keeps its
+  defaults), strict booleans (`freeze-hold-actions=flase` is reported, not silently false),
   sample file round trip.
 
 ### What the JUnit suite does not cover
@@ -46,6 +47,11 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
   manual procedure.
 - No test runs a real packet stream through Geyser's translators, and no test runs against a real Bedrock client.
   The manual procedure, step 9, covers the detach path on a real client.
+
+- Test counts are read from the Surefire XML on each run and published as a check-run annotation. The last green
+  run on `1fe683a` (build runs 40028071418 for the pull request and 40028064897 for the push) reported 140 tests,
+  0 failures, 0 errors, 0 skipped. This is the only test count this document relies on; it changes with every test
+  added.
 
 ## Manual procedure (not automated)
 
@@ -75,13 +81,38 @@ Minecraft Java and Bedrock versions, and the output of `/hauteur doctor` and `/h
 11. **Performance.** Measure a switch with a full view distance (for example 24 chunks). Record replay time on the
     event loop. No figure is claimed in the documentation until this is measured.
 
+## Measured: chunk codec throughput (synthetic, not a server measurement)
+
+`dev/bench/ReliceBench.java` times `SectionCodec.resliceTolerant` on generated 24-section overworld payloads
+(sparse: 4-bit blocks, singleton biomes; dense: 8-bit blocks, explicit biome palette). It checks that the
+generated payload parses with no anomaly before timing. Run it with a JDK 21:
+
+```
+javac -d /tmp/bench/classes src/main/java/io/github/maxlananas/hauteur/chunk/SectionCodec.java dev/bench/ReliceBench.java
+java -cp /tmp/bench/classes ReliceBench 4000
+```
+
+Result on the sandbox used for this branch: seven runs of 4000 iterations, ranges shown. The sandbox is
+shared and noisy, so read the ranges, not single values:
+
+| Payload | Size | Per chunk | Throughput | 2048 chunks (full cache) |
+|---|---|---|---|---|
+| sparse | 3.8 KB | 2.6 to 3.8 µs | 1.0 to 1.5 GB/s | 5 to 8 ms |
+| dense | 8.9 KB | 4.8 to 7.6 µs | 1.2 to 1.8 GB/s | 10 to 15 ms |
+
+Reading: the codec runs at memory-copy speed, so there is no algorithmic headroom to recover here. A switch
+replays every cached chunk (`replayWorld`), and that cost is bounded by the cache budget
+(`chunk-cache-max-megabytes`, default 96 MB): between roughly 50 and 100 ms of event-loop time when the cache
+is full, at the throughput range above. Real chunks are larger than these synthetic ones, so this is a floor,
+not an estimate for a live server. The replay also performs Netty pipeline writes, which this benchmark does
+not include.
+
+Not measured: the replay on a live server, `WindowedChunks` with real MCProtocolLib packets, packet translation
+per tick, and GC behaviour under load. Those remain open under item 11 above.
+
 ## Known open items
 
-- No measured performance figures.
+- No live-server performance figures. The only measurements are the synthetic codec numbers above.
 - No validation with a real Bedrock client has been recorded for this version.
 - The Maven distribution downloaded by `./mvnw` is not pinned by a checksum yet (`distributionSha256Sum` is unset).
   Pin it from the Apache release files before the first public release.
-- Test counts are read from the Surefire XML on each run and published as a check-run annotation. The last green
-  run on `531b89e` (build runs 40022642524 for the pull request and 40022635460 for the push) reported 139 tests,
-  0 failures, 0 errors, 0 skipped. This is the only test count this document relies on; it changes with every test
-  added.
