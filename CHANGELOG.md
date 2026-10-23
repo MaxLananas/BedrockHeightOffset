@@ -47,7 +47,8 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 - Release workflow: tag and Maven version must match, the tagged commit must be on `main`, existing releases are
   verified rather than overwritten, and the jar and checksums are published together with build information.
 - Build workflow publishes the Surefire test summary on the job page.
-- Logo under `assets/logo/` (SVG sources and PNG exports).
+- Logo under `assets/logo/`: a 1024 px master, PNG exports (512, 128, 32) and a monochrome variant, regenerated
+  by `dev/release/export_logo.sh`. The logo replaces the earlier SkyWindow/Hypso artwork.
 
 ### Changed
 
