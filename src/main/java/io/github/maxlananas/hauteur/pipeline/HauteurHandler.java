@@ -94,7 +94,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         this.logger = Objects.requireNonNull(logger);
         this.managerContext = Objects.requireNonNull(managerContext);
         // Built here, not in the field initializer: the overflow lambda must capture a fully assigned state.
-        this.held = new HeldQueue(HELD_QUEUE_LIMIT, state.heldOverflow::increment);
+        this.held = new HeldQueue(HELD_QUEUE_LIMIT, () -> state.count(HauteurSession.Stat.HELD_OVERFLOW));
     }
 
     @Override
@@ -222,7 +222,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         HauteurSession.WindowConfig w = state.window();
         boolean applies = w != null && w.needed();
         if (applies && !state.chunkCache.put(chunk)) {
-            state.chunkUncacheable.increment();
+            state.count(HauteurSession.Stat.CHUNK_UNCACHEABLE);
             if (state.watch()) {
                 watch("IN", "LevelChunkWithLight", "larger than the cache budget; not replayable on switch");
             }
@@ -231,9 +231,9 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         if (offset != 0 && applies) {
             WindowedChunks.Outcome windowed = WindowedChunks.window(chunk, w.chunkParams(offset));
             if (windowed.anomaly()) {
-                state.chunkAnomalies.increment();
+                state.count(HauteurSession.Stat.CHUNK_ANOMALIES);
             } else {
-                state.chunkWindowed.increment();
+                state.count(HauteurSession.Stat.CHUNK_WINDOWED);
             }
             if (state.watch()) {
                 watch("IN", "LevelChunkWithLight", "resliced by " + offset
@@ -272,7 +272,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         }
         Object translated = InboundYTransforms.apply(packet, offset);
         if (translated != packet) {
-            state.inTranslated.increment();
+            state.count(HauteurSession.Stat.IN_TRANSLATED);
             if (state.watch()) {
                 watch("IN", shortName(packet), "y-" + offset);
             }
@@ -297,7 +297,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             worst = worse(worst, state.chunkCache.recordBlockEntity(p));
         }
         if (worst == ChunkCache.Record.EVICTED_JOURNAL_OVERFLOW) {
-            state.journalOverflows.increment();
+            state.count(HauteurSession.Stat.JOURNAL_OVERFLOWS);
             if (state.watch()) {
                 watch("IN", shortName(packet), "chunk journal overflow; chunk evicted");
             }
@@ -359,7 +359,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         if (offset != 0 && appliesToPlayer()) {
             Object translated = OutboundYTransforms.apply(packet, offset, core.commandConfig());
             if (translated != packet) {
-                state.outTranslated.increment();
+                state.count(HauteurSession.Stat.OUT_TRANSLATED);
                 if (state.watch()) {
                     watch("OUT", shortName(packet), "y+" + offset);
                 }
@@ -395,7 +395,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         Object translated = withRotation
             ? ((ServerboundMovePlayerPosRotPacket) packet).withY(realY)
             : ((ServerboundMovePlayerPosPacket) packet).withY(realY);
-        state.outTranslated.increment();
+        state.count(HauteurSession.Stat.OUT_TRANSLATED);
         if (state.watch()) {
             watch("OUT", withRotation ? "MovePlayerPosRot" : "MovePlayerPos", "y+" + offset);
         }
@@ -418,7 +418,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
 
     private void holdOrDrop(MinecraftPacket packet, ChannelPromise promise, boolean blockAction, boolean enabled) {
         if (enabled && held.offer(new HeldQueue.Entry(packet, promise, blockAction))) {
-            state.actionsHeld.increment();
+            state.count(HauteurSession.Stat.ACTIONS_HELD);
             if (state.watch()) {
                 watch("OUT", shortName(packet), "held across switch");
             }
@@ -428,7 +428,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
     }
 
     private void dropFrozen(MinecraftPacket packet, ChannelPromise promise) {
-        state.droppedWhileFrozen.increment();
+        state.count(HauteurSession.Stat.DROPPED_WHILE_FROZEN);
         recordGhost(packet);
         if (state.watch()) {
             watch("OUT", shortName(packet), "dropped across switch");
@@ -437,7 +437,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
     }
 
     private void dropForFailure(MinecraftPacket packet, ChannelPromise promise) {
-        state.transformFailures.increment();
+        state.count(HauteurSession.Stat.TRANSFORM_FAILURES);
         if (state.watch()) {
             watch("OUT", shortName(packet), "dropped: transform failure (fail closed)");
         }
@@ -539,7 +539,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             state.setLastSwitchAtMs(now);
             held.clearAndComplete();
             state.ghostRevertPositions.clear();
-            state.windowSwitches.increment();
+            state.count(HauteurSession.Stat.WINDOW_SWITCHES);
 
             replayWorld(w, target);
             if (injectSnap && session.isSpawned()) {
@@ -587,8 +587,8 @@ public final class HauteurHandler extends ChannelDuplexHandler {
                 return;
             }
             state.setLastFreezeNanos(System.nanoTime() - state.switchStartNanos());
-            state.freezeTotalNanos.add(state.lastFreezeNanos());
-            state.freezeCount.increment();
+            state.add(HauteurSession.Stat.FREEZE_NANOS, state.lastFreezeNanos());
+            state.count(HauteurSession.Stat.FREEZE_COUNT);
             ChannelHandlerContext self = ctx;
             try {
                 if (self == null || !self.channel().isActive()) {
@@ -718,9 +718,9 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             try {
                 WindowedChunks.Outcome windowed = WindowedChunks.window(entry.packet(), w.chunkParams(target));
                 if (windowed.anomaly()) {
-                    state.chunkAnomalies.increment();
+                    state.count(HauteurSession.Stat.CHUNK_ANOMALIES);
                 } else {
-                    state.chunkReplays.increment();
+                    state.count(HauteurSession.Stat.CHUNK_REPLAYS);
                 }
                 managerContext.fireChannelRead(windowed.packet());
                 for (BlockChangeEntry change : entry.blockChanges()) {
@@ -740,7 +740,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
                 }
             } catch (Throwable t) {
                 // One chunk failing to replay must not abort the switch for the others.
-                state.chunkAnomalies.increment();
+                state.count(HauteurSession.Stat.CHUNK_ANOMALIES);
                 logger.error("[Hauteur] chunk replay failed for chunk " + entry.packet().getX() + ","
                     + entry.packet().getZ(), t);
             }
@@ -805,7 +805,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         if (passesUntranslated()) {
             ctx.fireChannelRead(packet);
         } else {
-            state.transformFailures.increment();
+            state.count(HauteurSession.Stat.TRANSFORM_FAILURES);
         }
     }
 

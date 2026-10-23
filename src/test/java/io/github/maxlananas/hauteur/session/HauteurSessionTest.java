@@ -2,7 +2,6 @@ package io.github.maxlananas.hauteur.session;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -114,21 +113,19 @@ class HauteurSessionTest {
     }
 
     @Test
-    void statsBaselineSlotsAreDistinctAndInsideTheArray() {
-        int[] slots = {
-            HauteurSession.BASELINE_IN_TRANSLATED, HauteurSession.BASELINE_OUT_TRANSLATED,
-            HauteurSession.BASELINE_CHUNKS_WINDOWED, HauteurSession.BASELINE_CHUNK_REPLAYS,
-            HauteurSession.BASELINE_WINDOW_SWITCHES, HauteurSession.BASELINE_DROPPED_WHILE_FROZEN,
-            HauteurSession.BASELINE_CHUNK_ANOMALIES, HauteurSession.BASELINE_ACTIONS_HELD,
-            HauteurSession.BASELINE_HELD_OVERFLOW, HauteurSession.BASELINE_FREEZE_COUNT,
-            HauteurSession.BASELINE_FREEZE_NANOS, HauteurSession.BASELINE_CHUNKS_UNCACHEABLE,
-            HauteurSession.BASELINE_JOURNAL_OVERFLOWS, HauteurSession.BASELINE_TRANSFORM_FAILURES,
-            HauteurSession.BASELINE_RESET_MARK,
-        };
-        assertEquals(slots.length, Arrays.stream(slots).distinct().count(), "two counters share a slot");
+    void statsResetCoversEveryCounter() {
         HauteurSession state = new HauteurSession(() -> null, 64, 1 << 20);
-        for (int slot : slots) {
-            assertTrue(slot >= 0 && slot < state.statsBaseline.length, "slot " + slot + " is out of range");
+        for (HauteurSession.Stat stat : HauteurSession.Stat.values()) {
+            state.add(stat, 5);
+        }
+        assertFalse(state.statsReset());
+        state.resetStats();
+        assertTrue(state.statsReset());
+        for (HauteurSession.Stat stat : HauteurSession.Stat.values()) {
+            assertEquals(0, state.sinceReset(stat), stat.name() + " must be reset");
+            state.count(stat);
+            assertEquals(1, state.sinceReset(stat), stat.name());
+            assertEquals(6, state.total(stat), stat.name() + " keeps its lifetime total");
         }
     }
 

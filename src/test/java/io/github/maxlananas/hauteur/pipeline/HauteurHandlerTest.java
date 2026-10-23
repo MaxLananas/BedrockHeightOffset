@@ -219,7 +219,7 @@ class HauteurHandlerTest {
         assertSame(trigger, rig.sendMove(trigger));
         assertEquals(TARGET_OFFSET, rig.state.offset());
         assertTrue(rig.state.frozen(), "the switch freezes movement until the freeze ends");
-        assertEquals(1, rig.state.windowSwitches.sum());
+        assertEquals(1, rig.state.total(HauteurSession.Stat.WINDOW_SWITCHES));
 
         List<Object> injected = rig.drainInbound();
         assertEquals(1, injected.size(), "one snap, no chunk to replay");
@@ -293,7 +293,7 @@ class HauteurHandlerTest {
 
         assertSame(high, rig.sendMove(high));
         assertEquals(0, rig.state.offset());
-        assertEquals(0, rig.state.windowSwitches.sum());
+        assertEquals(0, rig.state.total(HauteurSession.Stat.WINDOW_SWITCHES));
         assertTrue(rig.drainInbound().isEmpty());
     }
 
@@ -327,7 +327,7 @@ class HauteurHandlerTest {
         assertNull(rig.sendMove(rig.move(Double.POSITIVE_INFINITY)));
         assertEquals(0, rig.state.offset());
         assertEquals(0.0, rig.state.lastSeenRealY(), "the anchor is unchanged");
-        assertEquals(0, rig.state.windowSwitches.sum());
+        assertEquals(0, rig.state.total(HauteurSession.Stat.WINDOW_SWITCHES));
         assertTrue(rig.drainInbound().isEmpty());
     }
 
@@ -344,7 +344,7 @@ class HauteurHandlerTest {
         // Positive control: a valid target does move the window, so the rejections above are meaningful.
         rig.handler.forceWindow(HIGH_REAL_Y);
         assertEquals(TARGET_OFFSET, rig.state.offset());
-        assertEquals(1, rig.state.windowSwitches.sum());
+        assertEquals(1, rig.state.total(HauteurSession.Stat.WINDOW_SWITCHES));
     }
 
     @Test

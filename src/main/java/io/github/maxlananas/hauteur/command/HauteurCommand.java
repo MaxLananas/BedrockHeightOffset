@@ -11,7 +11,6 @@ import org.geysermc.geyser.session.GeyserSession;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.atomic.LongAdder;
 
 /**
  * {@code /hauteur} (aliases {@code /sw}, {@code /bho}) - per-player state inspection and development
@@ -201,7 +200,7 @@ public final class HauteurCommand {
         send(session, ok(state.offset() % 16 == 0) + " §7invariants: offset §f" + state.offset() + " (section-aligned: " + (state.offset() % 16 == 0) + ")"
             + " §7(world gen §f" + state.worldGeneration() + "§7, backoff §f" + state.switchBackoff() + "§7)");
         send(session, "§7anomaly-normalized chunk payloads: §f"
-            + (state.chunkAnomalies.sum() - state.statsBaseline[HauteurSession.BASELINE_CHUNK_ANOMALIES])
+            + state.sinceReset(HauteurSession.Stat.CHUNK_ANOMALIES)
             + " §7(resets are yours, not the server's)");
     }
 
@@ -211,56 +210,31 @@ public final class HauteurCommand {
             return;
         }
         if (args.length >= 2 && args[1].equalsIgnoreCase("reset")) {
-            resetStats(state);
+            state.resetStats();
             send(session, "§aStats baseline reset for this session.");
             return;
         }
-        long[] b = state.statsBaseline;
-        long freezes = state.freezeCount.sum() - b[HauteurSession.BASELINE_FREEZE_COUNT];
-        long freezeNanos = state.freezeTotalNanos.sum() - b[HauteurSession.BASELINE_FREEZE_NANOS];
+        long freezes = state.sinceReset(HauteurSession.Stat.FREEZE_COUNT);
+        long freezeNanos = state.sinceReset(HauteurSession.Stat.FREEZE_NANOS);
         String freezeAvg = freezes > 0
             ? (freezeNanos / freezes) / 1_000L + " µs avg"
             : "no completed switch yet";
         send(session,
-            "§bHauteur stats §7(this player, since " + (b[HauteurSession.BASELINE_RESET_MARK] == 0 ? "join" : "last reset") + "):",
-            "§7inbound packets translated: §f" + since(state.inTranslated, b, HauteurSession.BASELINE_IN_TRANSLATED),
-            "§7outbound packets translated: §f" + since(state.outTranslated, b, HauteurSession.BASELINE_OUT_TRANSLATED),
-            "§7chunks windowed on arrival: §f" + since(state.chunkWindowed, b, HauteurSession.BASELINE_CHUNKS_WINDOWED),
-            "§7chunk replays during window switches: §f" + since(state.chunkReplays, b, HauteurSession.BASELINE_CHUNK_REPLAYS),
-            "§7window switches: §f" + since(state.windowSwitches, b, HauteurSession.BASELINE_WINDOW_SWITCHES),
-            "§7outbound packets dropped while frozen: §f" + since(state.droppedWhileFrozen, b, HauteurSession.BASELINE_DROPPED_WHILE_FROZEN),
-            "§7anomaly-normalized chunk payloads: §f" + since(state.chunkAnomalies, b, HauteurSession.BASELINE_CHUNK_ANOMALIES),
-            "§7actions/movement held across switches: §f" + since(state.actionsHeld, b, HauteurSession.BASELINE_ACTIONS_HELD)
-                + " §7(overflow drops: §f" + since(state.heldOverflow, b, HauteurSession.BASELINE_HELD_OVERFLOW) + "§7)",
-            "§7chunks not replayable (over cache budget): §f" + since(state.chunkUncacheable, b, HauteurSession.BASELINE_CHUNKS_UNCACHEABLE)
-                + " §7| journal overflows (chunk evicted): §f" + since(state.journalOverflows, b, HauteurSession.BASELINE_JOURNAL_OVERFLOWS),
-            "§7packets dropped on transform failure (fail closed): §f" + since(state.transformFailures, b, HauteurSession.BASELINE_TRANSFORM_FAILURES),
+            "§bHauteur stats §7(this player, since " + (state.statsReset() ? "last reset" : "join") + "):",
+            "§7inbound packets translated: §f" + state.sinceReset(HauteurSession.Stat.IN_TRANSLATED),
+            "§7outbound packets translated: §f" + state.sinceReset(HauteurSession.Stat.OUT_TRANSLATED),
+            "§7chunks windowed on arrival: §f" + state.sinceReset(HauteurSession.Stat.CHUNK_WINDOWED),
+            "§7chunk replays during window switches: §f" + state.sinceReset(HauteurSession.Stat.CHUNK_REPLAYS),
+            "§7window switches: §f" + state.sinceReset(HauteurSession.Stat.WINDOW_SWITCHES),
+            "§7outbound packets dropped while frozen: §f" + state.sinceReset(HauteurSession.Stat.DROPPED_WHILE_FROZEN),
+            "§7anomaly-normalized chunk payloads: §f" + state.sinceReset(HauteurSession.Stat.CHUNK_ANOMALIES),
+            "§7actions/movement held across switches: §f" + state.sinceReset(HauteurSession.Stat.ACTIONS_HELD)
+                + " §7(overflow drops: §f" + state.sinceReset(HauteurSession.Stat.HELD_OVERFLOW) + "§7)",
+            "§7chunks not replayable (over cache budget): §f" + state.sinceReset(HauteurSession.Stat.CHUNK_UNCACHEABLE)
+                + " §7| journal overflows (chunk evicted): §f" + state.sinceReset(HauteurSession.Stat.JOURNAL_OVERFLOWS),
+            "§7packets dropped on transform failure (fail closed): §f" + state.sinceReset(HauteurSession.Stat.TRANSFORM_FAILURES),
             "§7freeze duration: §f" + freezeAvg + " §7| last: §f" + (state.lastFreezeNanos() / 1_000L) + " µs",
             "§7last frame used while frozen: §f" + state.frozenFrameOffset() + " §7| now: §f" + state.offset());
-    }
-
-    /** Copies every counter that {@code stats} displays into the baseline, so later reads show what happened since. */
-    private static void resetStats(HauteurSession state) {
-        long[] b = state.statsBaseline;
-        b[HauteurSession.BASELINE_IN_TRANSLATED] = state.inTranslated.sum();
-        b[HauteurSession.BASELINE_OUT_TRANSLATED] = state.outTranslated.sum();
-        b[HauteurSession.BASELINE_CHUNKS_WINDOWED] = state.chunkWindowed.sum();
-        b[HauteurSession.BASELINE_CHUNK_REPLAYS] = state.chunkReplays.sum();
-        b[HauteurSession.BASELINE_WINDOW_SWITCHES] = state.windowSwitches.sum();
-        b[HauteurSession.BASELINE_DROPPED_WHILE_FROZEN] = state.droppedWhileFrozen.sum();
-        b[HauteurSession.BASELINE_CHUNK_ANOMALIES] = state.chunkAnomalies.sum();
-        b[HauteurSession.BASELINE_ACTIONS_HELD] = state.actionsHeld.sum();
-        b[HauteurSession.BASELINE_HELD_OVERFLOW] = state.heldOverflow.sum();
-        b[HauteurSession.BASELINE_FREEZE_COUNT] = state.freezeCount.sum();
-        b[HauteurSession.BASELINE_FREEZE_NANOS] = state.freezeTotalNanos.sum();
-        b[HauteurSession.BASELINE_CHUNKS_UNCACHEABLE] = state.chunkUncacheable.sum();
-        b[HauteurSession.BASELINE_JOURNAL_OVERFLOWS] = state.journalOverflows.sum();
-        b[HauteurSession.BASELINE_TRANSFORM_FAILURES] = state.transformFailures.sum();
-        b[HauteurSession.BASELINE_RESET_MARK] = 1;
-    }
-
-    private static long since(LongAdder counter, long[] baseline, int slot) {
-        return counter.sum() - baseline[slot];
     }
 
     private static int currentRealY(GeyserSession session, HauteurSession state) {

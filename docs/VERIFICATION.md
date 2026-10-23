@@ -30,8 +30,8 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
 - `LogSanitizerTest`: player-name sanitizing (control characters, bidi and zero-width characters, cut length,
   surrogate-safe cut).
 - `translate/PositionCoverageTest`, `session/HauteurSessionTest` (additions): the plain chat command is dropped
-  while frozen and rewritten otherwise; the quarantine is per session and keeps the first error; the stats
-  baseline slots are distinct.
+  while frozen and rewritten otherwise; the quarantine is per session and keeps the first error; every stats
+  counter is reset by `resetStats` and counts again from zero.
 - `HauteurConfigTest`: clamping, a malformed `\u` escape reported as an I/O error (the extension keeps its
   defaults), strict booleans (`freeze-hold-actions=flase` is reported, not silently false),
   sample file round trip.

@@ -67,26 +67,15 @@ public final class HauteurSession {
     /** Dropped-destroy positions remembered for an authoritative re-send; beyond this, the ghost is accepted. */
     public static final int GHOST_REVERT_LIMIT = 8;
 
-    /*
-     * Slots of statsBaseline, one per counter that /hauteur stats reset. A reset copies the current sum of each
-     * counter here; the displays show (sum - baseline). Slot BASELINE_RESET_MARK records that a reset happened.
+    /**
+     * Counters shown by {@code /hauteur stats}. Every counter is addressed through this enum, so a reset covers all
+     * of them by construction: a counter cannot be added without also being reset.
      */
-    public static final int BASELINE_IN_TRANSLATED = 0;
-    public static final int BASELINE_OUT_TRANSLATED = 1;
-    public static final int BASELINE_CHUNKS_WINDOWED = 2;
-    public static final int BASELINE_CHUNK_REPLAYS = 3;
-    public static final int BASELINE_WINDOW_SWITCHES = 4;
-    public static final int BASELINE_DROPPED_WHILE_FROZEN = 5;
-    public static final int BASELINE_CHUNK_ANOMALIES = 6;
-    public static final int BASELINE_ACTIONS_HELD = 7;
-    public static final int BASELINE_HELD_OVERFLOW = 8;
-    public static final int BASELINE_FREEZE_COUNT = 9;
-    public static final int BASELINE_FREEZE_NANOS = 10;
-    public static final int BASELINE_CHUNKS_UNCACHEABLE = 11;
-    public static final int BASELINE_JOURNAL_OVERFLOWS = 12;
-    public static final int BASELINE_TRANSFORM_FAILURES = 13;
-    public static final int BASELINE_RESET_MARK = 15;
-    private static final int BASELINE_SLOTS = 16;
+    public enum Stat {
+        IN_TRANSLATED, OUT_TRANSLATED, CHUNK_WINDOWED, CHUNK_REPLAYS, WINDOW_SWITCHES, DROPPED_WHILE_FROZEN,
+        CHUNK_ANOMALIES, ACTIONS_HELD, HELD_OVERFLOW, CHUNK_UNCACHEABLE, JOURNAL_OVERFLOWS, TRANSFORM_FAILURES,
+        FREEZE_COUNT, FREEZE_NANOS
+    }
 
     private final WindowConfigSource windowConfigSource;
     /**
@@ -139,22 +128,11 @@ public final class HauteurSession {
     private volatile int switchBackoff = 1;
     /** Last completed freeze duration, and running totals for the stats view. */
     private volatile long lastFreezeNanos;
-    public final LongAdder freezeTotalNanos = new LongAdder();
-    public final LongAdder freezeCount = new LongAdder();
-    /** Baselines captured by /hauteur stats reset; see the BASELINE_ constants. */
-    public final long[] statsBaseline = new long[BASELINE_SLOTS];
-    public final LongAdder inTranslated = new LongAdder();
-    public final LongAdder outTranslated = new LongAdder();
-    public final LongAdder chunkWindowed = new LongAdder();
-    public final LongAdder chunkReplays = new LongAdder();
-    public final LongAdder windowSwitches = new LongAdder();
-    public final LongAdder droppedWhileFrozen = new LongAdder();
-    public final LongAdder chunkAnomalies = new LongAdder();
-    public final LongAdder actionsHeld = new LongAdder();
-    public final LongAdder heldOverflow = new LongAdder();
-    public final LongAdder chunkUncacheable = new LongAdder();
-    public final LongAdder journalOverflows = new LongAdder();
-    public final LongAdder transformFailures = new LongAdder();
+    /** Per-session counters, indexed by {@link Stat#ordinal()}. Write through {@link #count}, read through {@link #total}. */
+    private final LongAdder[] counters = new LongAdder[Stat.values().length];
+    /** Totals captured by the last {@link #resetStats()}, indexed like {@link #counters}. */
+    private final long[] baseline = new long[Stat.values().length];
+    private volatile boolean statsReset;
 
     // Accessors. Writers are the handler (transitions, on the channel's event loop, under freezeLock), HauteurCore
     // (attach and detach, and the reload path) and the watch command. The fields are volatile, so readers see the
@@ -294,9 +272,45 @@ public final class HauteurSession {
         return ++worldGeneration;
     }
 
+    /** Adds one to a stats counter. */
+    public void count(Stat stat) {
+        counters[stat.ordinal()].increment();
+    }
+
+    /** Adds {@code delta} to a stats counter. */
+    public void add(Stat stat, long delta) {
+        counters[stat.ordinal()].add(delta);
+    }
+
+    /** Lifetime total of a stats counter. */
+    public long total(Stat stat) {
+        return counters[stat.ordinal()].sum();
+    }
+
+    /** Total since the last {@link #resetStats()}, or since the session started when there was none. */
+    public synchronized long sinceReset(Stat stat) {
+        return total(stat) - baseline[stat.ordinal()];
+    }
+
+    /** Whether {@code /hauteur stats reset} has run in this session. */
+    public boolean statsReset() {
+        return statsReset;
+    }
+
+    /** Captures every counter as the new baseline. Covers all of {@link Stat}, by construction. */
+    public synchronized void resetStats() {
+        for (Stat stat : Stat.values()) {
+            baseline[stat.ordinal()] = total(stat);
+        }
+        statsReset = true;
+    }
+
     public HauteurSession(WindowConfigSource windowConfigSource, int maxChunks, long maxBytes) {
         this.windowConfigSource = windowConfigSource;
         this.chunkCache = new ChunkCache(maxChunks, maxBytes);
+        for (int i = 0; i < counters.length; i++) {
+            counters[i] = new LongAdder();
+        }
     }
 
     /**
