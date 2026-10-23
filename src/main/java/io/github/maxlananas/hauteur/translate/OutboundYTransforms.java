@@ -2,6 +2,7 @@ package io.github.maxlananas.hauteur.translate;
 
 import org.cloudburstmc.math.vector.Vector3d;
 import org.cloudburstmc.math.vector.Vector3i;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandSignedPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundPickItemFromBlockPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundSetCommandBlockPacket;
@@ -73,6 +74,11 @@ public final class OutboundYTransforms {
             // Unsigned commands are rewritten (see apply), so their coordinates cannot be resolved while the
             // frame is uncertain. Signed commands are never rewritten and are not frame-dependent.
             return signed.getSignatures().isEmpty() ? FrozenDisposition.DROP : FrozenDisposition.TRANSMIT;
+        }
+        if (packet instanceof ServerboundChatCommandPacket) {
+            // The plain (unsigned) form. Geyser sends Bedrock commands in the signed form with no signatures, so
+            // this type is not expected; if it ever appears it is treated exactly like an unsigned command.
+            return FrozenDisposition.DROP;
         }
         return FrozenDisposition.TRANSMIT;
     }
@@ -189,6 +195,13 @@ public final class OutboundYTransforms {
         if (packet instanceof ServerboundChatCommandSignedPacket p && commands.enabled() && p.getSignatures().isEmpty()) {
             // Rewriting a signed command would invalidate its signature; unsigned commands (what Geyser
             // clients send) are safe to adjust.
+            String rewritten = CommandYRewrite.rewrite(p.getCommand(), offset, commands);
+            if (rewritten != null) {
+                return p.withCommand(rewritten);
+            }
+        }
+        if (packet instanceof ServerboundChatCommandPacket p && commands.enabled()) {
+            // The plain form carries no signature, so it is always safe to adjust.
             String rewritten = CommandYRewrite.rewrite(p.getCommand(), offset, commands);
             if (rewritten != null) {
                 return p.withCommand(rewritten);

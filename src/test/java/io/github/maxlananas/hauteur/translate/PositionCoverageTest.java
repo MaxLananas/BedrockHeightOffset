@@ -12,6 +12,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.Serve
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundMovePlayerPosRotPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundPlayerActionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundUseItemOnPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandSignedPacket;
 import org.junit.jupiter.api.Test;
 
@@ -61,6 +62,15 @@ class PositionCoverageTest {
         var unsigned = new ServerboundChatCommandSignedPacket("tp 0 600 0", 0L, 0L, Collections.emptyList(), 0,
             new BitSet(), (byte) 0);
         assertEquals(OutboundYTransforms.FrozenDisposition.DROP, OutboundYTransforms.frozenDisposition(unsigned));
+    }
+
+    @Test
+    void plainChatCommandIsDroppedWhileFrozenAndRewrittenOtherwise() {
+        var plain = new ServerboundChatCommandPacket("tp 0 600 0");
+        assertEquals(OutboundYTransforms.FrozenDisposition.DROP, OutboundYTransforms.frozenDisposition(plain));
+        var rewrite = new CommandYRewrite.Config(true, Set.of("tp"));
+        var out = (ServerboundChatCommandPacket) OutboundYTransforms.apply(plain, 1440, rewrite);
+        assertEquals("tp 0 2040 0", out.getCommand());
     }
 
     @Test
