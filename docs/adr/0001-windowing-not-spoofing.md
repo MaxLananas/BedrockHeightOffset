@@ -8,7 +8,7 @@ The Bedrock client hard-clamps positions and block rendering to its negotiated d
 (overworld with extended-height support: -512..512). A server whose world exceeds that (e.g.
 BuildTheEarth at ~1952) has three candidate strategies:
 
-a. **Spoof**: keep the client where it is and lie in the display layer about Y (old SkyWindow 3.x
+a. **Spoof**: keep the client where it is and lie in the display layer about Y (old Hypso 3.x
    and its relatives, plus several "height extender" plugins).
 b. **Reject**: clamp/deny movement outside 0..256 / -512..512 (upstream Geyser's position after
    rejecting coordinate spoofing in PR #5002 era; the status quo for unpatched servers).
@@ -37,4 +37,4 @@ upstream choke point, with re-homing switches when the player approaches the win
   announced option.
 - (a) was rejected: display-layer lies desynchronize Geyser's own caches (collision, chunk builder,
   block-change replay) and are exactly what produced 3.x rubber-banding/vanishing blocks.
-  (b) remains what unpatched servers do; SkyWindow is orthogonal to it.
+  (b) remains what unpatched servers do; Hypso is orthogonal to it.

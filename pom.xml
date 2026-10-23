@@ -5,12 +5,12 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>fr.buildtheearth</groupId>
-    <artifactId>skywindow</artifactId>
-    <version>1.0.0</version>
+    <artifactId>hypso</artifactId>
+    <version>1.1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
-    <name>SkyWindow</name>
-    <description>SkyWindow: a Geyser extension that lets Bedrock players build at extreme Java-world heights without rubber-banding</description>
+    <name>Hypso</name>
+    <description>Hypso: a Geyser extension that lets Bedrock players build at extreme Java-world heights without rubber-banding</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -19,7 +19,7 @@
           Geyser build this extension compiles against. The extension runs inside the Geyser
           plugin's classloader (parent-first), so the shaded mcprotocollib / cloudburst-protocol /
           netty classes it provides are the exact runtime classes - they are compileOnly here and
-          never bundled. Bump together with the target Geyser build and re-run /skywindow doctor.
+          never bundled. Bump together with the target Geyser build and re-run /hypso doctor.
         -->
         <geyser.version>2.11.2-SNAPSHOT</geyser.version>
         <junit.version>5.11.4</junit.version>
@@ -60,7 +60,7 @@
     </dependencies>
 
     <build>
-        <finalName>skywindow-${project.version}</finalName>
+        <finalName>hypso-${project.version}</finalName>
         <resources>
             <!-- Single source of truth for the version: the pom. -->
             <resource>

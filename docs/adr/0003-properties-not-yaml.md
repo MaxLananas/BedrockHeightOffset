@@ -14,7 +14,7 @@ elsewhere, silently ignored).
 ## Decision
 
 The standard `java.util.Properties` parser against
-`extensions/skywindow/config.properties`: zero dependencies, parse cannot fail (bad values are
+`extensions/hypso/config.properties`: zero dependencies, parse cannot fail (bad values are
 strings until *we* read them, and our readers clamp + collect warnings), unknown keys are
 detectable (a `Properties` instance enumerates everything), and the sample file doubles as a
 defaults oracle — a test asserts every sample value equals the code default, so documentation

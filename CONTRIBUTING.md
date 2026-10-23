@@ -1,56 +1,63 @@
 # Contributing
 
-Short version: this extension moves pixels and blocks around a *client limitation* on a production
-bridge, so the bar for changes is "provably inert when not needed, provably correct when needed".
-The review checklist at the bottom is not optional.
+Hypso changes how Minecraft coordinates reach a production bridge. The bar for a change is that it is
+provably inert when windowing is not needed, and provably correct when it is. Read
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/PACKET-MATRIX.md](docs/PACKET-MATRIX.md) first.
 
 ## Environment
 
-- JDK 21, Maven 3.9+. That's all: `mvn test` runs everything, `mvn package` builds the extension
-  jar (shaded only into `target/`; the jar is self-contained because Geyser provides every runtime
-  dependency parent-first).
-- CI compiles against the pinned `geyser.version` (`2.11.2-SNAPSHOT`) from the OpenGeyser
-  repository. If your change needs a newer Geyser API, bump the pin in the same PR and re-run the
-  packet-matrix audit (below).
+- JDK 21 and Maven 3.9+. Python 3 for the oracle (no dependencies).
+- `python3 dev/verify/oracle.py 5` and `mvn -B verify` must both pass. CI runs them on every push.
+- Maven resolves Geyser `api` and `core` from the OpenGeyser repository (`geyser.version` in `pom.xml`). A change
+  that needs a newer Geyser API bumps the pin in the same pull request and re-runs the packet-matrix audit.
 
 ## Ground rules
 
-1. **No new runtime dependencies.** The enforcer bans Bukkit/Spigot/Paper/ProtocolLib/Geyser-Spigot
-   outright; do not add anything else either - Geyser's classloader already provides netty,
-   mcprotocollib, cloudburst math. If you think you need a dependency, the design is wrong.
-2. **No new config key without all three**: default in `SkyWindowConfig`, entry in
-   `sampleFileContents()` (value = default; a test enforces the round-trip), row in the README
-   config table. Numeric keys get a clamp range, and clamping is silent - validation warnings are
-   only for *bad input*.
-3. **Threading contract**: per-session state is event-loop confined except the documented volatiles
-   and the two cross-thread structures (`HeldQueue`, ghost-revert set). A new field on
-   `SkyWindowSession` is event-loop-only unless you write down who else touches it, in the class
-   javadoc, and in `docs/ARCHITECTURE.md`.
-4. **Never throw from a packet path.** Translation failures quarantine the type and pass the packet
-   through; chunk parse failures degrade to air. If a new code path can throw on packet input, it
-   needs a fuzz test (see `SectionCodecFuzzTest` for the pattern: random + truncated inputs,
-   assert-the-invariant, not assert-the-bytes).
-5. Tests are behavioral: `oracle.py` (Python, dependency-free, mirrors the math and the codec
-   contract - runs on any machine), then JUnit (real packet objects). A transform change must land
-   with both sides updated, because CI only runs what the matrix says exists.
-
-## The packet-matrix audit (required on every Geyser/protocol bump, and when adding packet types)
-
-1. `grep -r "position\|\.getY()\|Vector3i" <Geyser checkout>/Core/src/main/java/org/geysermc/geyser/translator/`
-   (both directions: `protocol/java/*` and `packet/protocol/play`) against the mcprotocollib packet
-   list for the pinned protocol version.
-2. For each position-carrying packet not already in `docs/PACKET-MATRIX.md`: classify A (shift),
-   R (relative - must not touch), or — (document why: usually "no absolute Y in this shape"; the
-   minecart-command row is the model - cite the exact field list you verified).
-3. Extend `InboundYTransforms`/`OutboundYTransforms` + `TransformPropertyTest` matrix + `oracle.py`
-   mirror in one commit. Update the audit stamp at the top of the matrix doc.
+1. **No new runtime dependencies.** Geyser's classloader provides netty, mcprotocollib and cloudburst math. The
+   enforcer bans Bukkit, Spigot, Paper, ProtocolLib and Geyser-Spigot.
+2. **Configuration keys need three things:** a default in `HypsoConfig`, an entry in `sampleFileContents()` equal to
+   the default (a test checks this), and a row in the README table. Numeric keys get a clamp range.
+3. **Threading.** Per-session state is written on the channel event loop. Anything the outbound path reads is
+   `volatile`. Freeze transitions and outbound writes run under `freezeLock`; do not add a path that changes
+   `offset`, `frozen` or the held queue outside it. Document any new cross-thread field in the class Javadoc and in
+   `docs/ARCHITECTURE.md`.
+4. **Never throw from a packet path.** A transform failure quarantines its packet type and fails closed while the
+   window is active. A new path that can throw on packet input needs a fuzz or property test (see
+   `SectionCodecFuzzTest`).
+5. **Classify, do not default.** A new outbound packet with an absolute Y needs a row in
+   `OutboundYTransforms.frozenDisposition` and in `docs/PACKET-MATRIX.md`. A new inbound one needs a row in
+   `InboundYTransforms`. Relative quantities are never shifted.
+6. **Tests are behavioural.** A transform change lands with the `TransformPropertyTest` or `PositionCoverageTest`
+   update and the `dev/verify/oracle.py` mirror in the same commit. Do not delete or weaken an assertion to make a
+   change pass; if a test is wrong, say why in the commit message.
+7. **Comments** describe invariants, protocol constraints, concurrency contracts and non-obvious traps. Do not
+   restate code, and do not record how a change was produced.
 
 ## Submitting
 
-- Branch from `main`, small commits, `mvn test` green locally; CI is the merge gate (no force-push
-  past a red run without explanation in the PR).
-- User-visible behavior changes: update README (install/config/limitations) + CHANGELOG in the same
-  PR. The "Known limitations" list is maintained like an API surface - it is what makes claims here
-  trustworthy.
-- Release PRs (version bump in `pom.xml`): the annotated tag `vX.Y.Z` is pushed *after* merge and
-  the release workflow publishes jar + sha256; never tag from a PR branch.
+- Branch from `main`. Keep commits small and explain the behaviour change in the message.
+- User-visible changes update the README (install, configuration, limitations), the CHANGELOG `[Unreleased]`
+  section, and any affected document in `docs/`.
+- The "Known limitations" section in the README is part of the contract. Do not remove an item without evidence.
+- The build workflow is the merge gate. Do not merge with a red run unless the pull request explains why.
+
+## Releases
+
+- Version bumps in `pom.xml` and the matching `## [X.Y.Z]` changelog section are merged through a normal pull
+  request.
+- Tag only from `main`, with an annotated tag `vX.Y.Z`: `git tag -a vX.Y.Z -m "Hypso X.Y.Z"` then `git push origin vX.Y.Z`.
+- The release workflow checks that the tag matches `pom.xml`, that the changelog section exists, and that the commit
+  is on `main`. It publishes the jar, `SHA256SUMS.txt` and `build-info.txt`.
+- Releases are immutable. Re-running the workflow for the same tag is a no-op if the checksums match, and a failure
+  otherwise. Do not delete and recreate a release to change its files; publish a new version.
+- Do not create extra tags, for example archive tags, unless a release needs one: the release workflow reacts to
+  every `v*` tag.
+
+## Review checklist
+
+- [ ] `oracle.py` and `mvn verify` pass locally or in CI.
+- [ ] New packet types are classified in the code, in the matrix, and in the tests.
+- [ ] Nothing is shifted that is relative.
+- [ ] Failure paths fail closed and are visible in `/hypso doctor` or the logs.
+- [ ] Cross-thread state is listed in the class Javadoc and in `docs/ARCHITECTURE.md`.
+- [ ] README, CHANGELOG and `docs/VERIFICATION.md` reflect the change.

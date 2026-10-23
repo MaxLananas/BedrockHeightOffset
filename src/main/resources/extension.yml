@@ -1,6 +1,6 @@
-id: skywindow
-name: SkyWindow
-main: fr.buildtheearth.skywindow.SkyWindowExtension
+id: hypso
+name: Hypso
+main: fr.buildtheearth.hypso.HypsoExtension
 api: 2.11.0
 version: ${project.version}
 authors: [BuildTheEarth]

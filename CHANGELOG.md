@@ -1,62 +1,73 @@
 # Changelog
 
-All notable changes to SkyWindow. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) against the
-pinned Geyser build (see README "Version compatibility" for why that pin *is* the API surface).
+All notable changes to Hypso. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) for the extension's configuration,
+commands and jar name. The pinned Geyser build is listed in the README.
 
-## [1.0.0] - 2026-09-08
+## [Unreleased]
 
-First release of the rewritten extension. Everything below replaces the 3.x plugin line wholesale;
-**3.x and 1.0.0 must never run on the same server** (see "Removed").
+Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSHOT`.
+
+### Renamed
+
+- The project is now **Hypso** (formerly SkyWindow). Jar: `hypso-<version>.jar`. Package:
+  `fr.buildtheearth.hypso`. Extension id: `hypso`. Command: `/hypso`.
+- Migration: `extensions/skywindow/config.properties` is copied to `extensions/hypso/` on first start (the old file
+  is kept). `/skywindow`, `/sw` and `/bho` remain as command aliases.
+- The repository name and the Maven `groupId` (`fr.buildtheearth`) are unchanged.
+
+### Fixed
+
+- Window switches replayed the chunk as it arrived and reverted later block and block-entity edits. Each cached
+  chunk now keeps a journal of those changes and replays it.
+- The chunk-cache budget was not strict: a 32-chunk exemption let it be exceeded, and light arrays were not
+  counted. The budget is now strict, and an oversized chunk is not cached.
+- Own-player teleports (`ClientboundPlayerPositionPacket`) were not translated, so a teleport to altitude reached
+  the Bedrock client at the real Y. They are now translated, and they trigger the window switch.
+- Relative Y values in teleport packets were shifted as if absolute.
+- During a freeze, sign, command block, structure, jigsaw and pick-block packets were sent untranslated, placing
+  them at the wrong height. They are now held as block actions.
+- Packets held across a switch were always replayed in the pre-switch frame, including movement sent after the
+  client had adopted the new one. Held packets are now resolved against the player's last known position, and
+  dropped when no frame is plausible.
+- The stale offset survived a respawn or login, so direct world reads could use the wrong height.
+- Destroyed-block ghosts were re-sent for the wrong position after a switch.
+- `freeze-hold-actions=false` had no effect.
+- Invalid boolean values were silently read as `false`; they now keep the default and produce a warning.
+- Changes to the chunk-cache budget on reload did not apply to connected players, and re-enabling the extension
+  did not attach connected players until they reconnected.
+- A packet type whose transform failed was passed through untranslated while the window was active. It is now
+  dropped (fail closed) and reported by `/hypso doctor`.
+- Chunk-cache access from the session and reload threads was unsynchronized.
 
 ### Added
 
-- **Height windowing.** Bedrock players climb above the client-side Y limit (extended-height
-  overworlds up to real 1952) via a per-session offset O, applied inbound as −O and outbound as +O
-  at the single upstream-pipeline choke point, with automatic re-homing switches (margin + cooldown
-  + anti-oscillation backoff up to 8x) and a ~400 ms freeze protocol around each switch.
-- **Chunk re-slicing** (`SectionCodec`): section array of `LevelChunkWithLight` payloads is moved as
-  whole byte ranges; tolerance-first (malformed input degrades to air, never to a decode exception
-  in Geyser's chunk path); parsed sections preserved byte-identical.
-- **Freeze hold & replay**: block interactions (dig/place) *and* movement sent during a switch
-  freeze are queued in a bounded lock-free FIFO and replayed on unfreeze in the frame they were
-  captured in (`freeze-hold-actions`, `freeze-hold-movement`), with reach-checked replay decisions
-  and authoritative ghost-block re-sends where a held packet had to be dropped.
-- **Anti rubber-band**: per-session `WorldManager` decorator reports window-corrected collision
-  heights so Geyser's own correction logic cannot yank windowed players (the 3.x bug, fixed at the
-  root instead of by counter-packets).
-- **Command rewriting** for the unsigned `tp`-family: absolute Y in the first position triple,
-  format-preserving, length-capped (512) before scanning; relative and caret coordinates untouched.
-- **Ops/diagnostics**: `/skywindow info|watch|recent|doctor|stats [reset]|window <realY>` with
-  nanosecond freeze accounting, quarantine registry for deterministically failing packet types,
-  degraded-attach reporting, and the exact audited Geyser build printed in `doctor`.
-- **Config hardening**: every numeric key clamped to a safe range; invalid values and unknown keys
-  collected as load-time warnings (logged, never fatal); a shipped sample file whose values are
-  test-pinned to equal the code defaults.
-- **Safety nets**: 60 s session-close sweeper (reclaims state when disconnect events don't fire),
-  already-wrapped chunk payloads detected as no-op (double-shift protection), `worldGeneration`
-  epoch so post-respawn ghosts/held entries can never touch a new world, promise completion on
-  every abandoned hold path (no hanging Geyser write futures).
-- **Test suite**: 84 JUnit tests (unit + property-style + fuzz, incl. a 100k-entry MPMC race test for
-  the held queue) plus `dev/verify/oracle.py`, a standalone Python mirror of the window/chunk
-  contract executed both locally and before every CI build.
-- **Project**: Maven enforcer (Java 21, banned Bukkit/Spigot/Paper/ProtocolLib and Geyser-Spigot
-  dependencies, upper-bound conflict gate), `-Xlint:all`, dependabot for maven+actions, CI on
-  push/PR + weekly schedule, release workflow publishing jar + sha256 on `v*` tags, editorconfig
-  and gitattributes normalization.
+- `/hypso stats` shows chunks that could not be replayed, journal overflows and transform failures.
+- Release workflow: tag and Maven version must match, the tagged commit must be on `main`, existing releases are
+  verified rather than overwritten, and the jar and checksums are published together with build information.
+- Build workflow publishes the Surefire test summary on the job page.
+- Logo under `assets/logo/` (SVG sources and PNG exports).
 
 ### Changed
 
-- (from 3.x) Everything. The old coordinate-mirroring plugin is not an evolution target: this is a
-  Geyser *extension* living in the upstream mcprotocollib pipeline instead of a Paper plugin
-  rewriting packets on both sides.
+- GitHub Actions are pinned to commit SHAs, with the tag in a comment. The workflows run with read-only
+  permissions by default; only the publish job can write to releases.
 
-### Removed
+### Known limitations
 
-- 3.x `BedrockPacketInterceptor`, `BedrockHeightOffset` plugin, reflection into
-  `GeyserSession`, `config.yml`, and the manually committed `target/` build artifacts.
+See the README. In particular, the behaviour has not been verified on a real Bedrock client, and no performance
+measurement is recorded.
 
-## [3.x] - deprecated
+## [1.0.0] - 2026-09-08
 
-Last 3.x tag (`3.7.0`) is archived on the `3.7.0` branch. It stays documented only in
-README "What was wrong with the old implementation". No further releases; update to 1.0.0.
+First release of the rewritten extension (then named SkyWindow). It replaced the 3.x plugin line; 3.x and 1.0.0
+must never run on the same server.
+
+- Height windowing with a per-player offset, applied at a single pipeline choke point, with margin, cooldown and
+  backoff, and a freeze around each switch.
+- Chunk re-slicing for extended-height payloads.
+- Freeze hold and replay for block actions and movement.
+- A `WorldManager` decorator for direct world reads.
+- Command rewriting for unsigned `tp`-family commands.
+- `/skywindow info|watch|recent|doctor|stats|window` diagnostics.
+- Configuration clamping and a sample file whose values are tested against the code defaults.
