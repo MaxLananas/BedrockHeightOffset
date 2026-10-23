@@ -9,6 +9,7 @@ else. It runs anywhere; the Java mirror is exercised by JUnit in CI.
 
     python3 dev/verify/oracle.py [rounds]
 """
+import math
 import random
 import struct
 import sys
@@ -33,7 +34,7 @@ def target_offset(real_y, client_min_y, client_height, max_offset):
     if max_offset <= 0:
         return 0
     centered = real_y - (client_min_y + client_height / 2.0)
-    snapped = int(centered / SECTION + 0.5) * SECTION  # matches Java floor(x+0.5)
+    snapped = math.floor(centered / SECTION + 0.5) * SECTION  # Java Math.floor, not int() truncation
     return max(0, min(max_offset, snapped))
 
 
@@ -83,6 +84,9 @@ def skip_palette(data, p, max_list_bits):
         return p
     if bits <= max_list_bits:
         count, p = read_varint(data, p)
+        if count >= 2 ** 31:
+            # SectionCodec reads the count as a Java int: a value at or above 2^31 is negative and rejected.
+            raise FormatError("negative palette size")
         for _ in range(count):
             _, p = read_varint(data, p)
     long_count, p = read_varint(data, p)
@@ -301,6 +305,13 @@ def property_malformed_input_throws():
     try:
         reslice(good + b"\x00", 4, 0, 4)
         raise AssertionError("trailing bytes not detected")
+    except FormatError:
+        pass
+    # A palette size at or above 2^31 is malformed (Java reads it as a negative int), never a skip.
+    bad = bytes([0, 0, 0, 0, 4, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F])
+    try:
+        section_length(bad, 0)
+        raise AssertionError("negative palette size not detected")
     except FormatError:
         pass
 

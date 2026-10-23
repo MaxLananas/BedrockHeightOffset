@@ -50,10 +50,10 @@ public final class SectionCodec {
 
     /** @return the byte length of the section starting at {@code offset}; throws on malformed input. */
     public static int sectionLength(byte[] data, int offset) {
-        int pos = offset + 4; // block count + fluid count
-        if (offset < 0 || pos > data.length) {
+        if (offset < 0 || offset + 4 > data.length) {
             throw new FormatException("section header out of bounds");
         }
+        int pos = offset + 4; // block count + fluid count
         pos = skipPalette(data, pos, BLOCK_MAX_PALETTE_BITS);
         pos = skipPalette(data, pos, BIOME_MAX_PALETTE_BITS);
         if (pos > data.length) {
@@ -128,6 +128,11 @@ public final class SectionCodec {
             long count = readVarintScan(data, pos);
             pos = (int) (count >>> 32);
             int paletteEntries = (int) count;
+            if (paletteEntries < 0) {
+                // A varint at or above 2^31 is a malformed count. Read as a negative int it would skip the
+                // palette loop and parse the storage at the wrong offset, so it is rejected instead.
+                throw new FormatException("negative palette size");
+            }
             for (int i = 0; i < paletteEntries; i++) {
                 pos = skipVarint(data, pos);
             }
@@ -163,7 +168,7 @@ public final class SectionCodec {
 
     /**
      * Single-scan varint: {@code (newPos << 32) | value}. The decode+rescan pair an earlier version
-     * used doubled the byte visits for every palette entry of every section of every chunked windowed.
+     * used doubled the byte visits for every palette entry of every section of every windowed chunk.
      */
     private static long readVarintScan(byte[] data, int pos) {
         int value = 0;

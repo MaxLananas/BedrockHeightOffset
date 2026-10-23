@@ -196,4 +196,17 @@ class SectionCodecTest {
         assertArrayEquals(SectionCodec.EMPTY_SECTION,
             Arrays.copyOfRange(out, moved1.length + moved2.length, moved1.length + moved2.length + 8));
     }
+
+    @Test
+    void negativePaletteSizeIsMalformedNotSkipped() {
+        // Block palette with bitsPerEntry 4 (an explicit id list). Its size varint 0xFFFFFFFF reads as -1 as an int.
+        // Skipping the list would parse the storage at the wrong offset, so the section must be rejected.
+        byte[] section = {0, 0, 0, 0, 4, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, 0x0F};
+        assertThrows(SectionCodec.FormatException.class, () -> SectionCodec.sectionLength(section, 0));
+    }
+
+    @Test
+    void negativeOffsetIsMalformedNotAnArrayFault() {
+        assertThrows(SectionCodec.FormatException.class, () -> SectionCodec.sectionLength(new byte[8], -1));
+    }
 }
