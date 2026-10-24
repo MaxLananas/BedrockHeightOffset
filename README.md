@@ -120,9 +120,11 @@ These are current, tested-or-documented facts, not promises:
 - **Failure policy.** When a packet type fails to transform while the window is active, that type is dropped
   for the session (fail closed) and logged once. The quarantine belongs to the session: a reconnect starts with
   an empty list.
-- **Performance is measured only on synthetic chunks.** A window switch replays every cached chunk on the channel
-  event loop. `dev/bench/SectionCodecBench.java` times the codec alone (see
-  [VERIFICATION.md](docs/VERIFICATION.md)); the replay cost on a live server with real chunks has not been measured.
+- **Performance is measured on the codec and on synthetic chunks only.** A window switch replays every cached chunk on
+  the channel event loop. On a 2-vCPU sandbox, `dev/bench/SectionCodecBench.java` reslices a chunk in about 2 µs
+  (sparse) to 4.5 µs (dense), so a full 2048-chunk replay is about 4 to 10 ms of CPU. The configured freeze
+  (`freeze-ms`, 400 ms) is a fixed timer, not the replay time. The network and client-side cost of the replay, and any
+  cost on a live server, have not been measured. See [ARCHITECTURE.md](docs/ARCHITECTURE.md#replay-cost).
 
 ## Verification
 

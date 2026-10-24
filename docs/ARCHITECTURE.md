@@ -189,4 +189,28 @@ box shifted and the result indexed as before.
 - Client-side adoption of a frame is inferred from time and plausibility; Bedrock sends no acknowledgement that
   Hauteur can read.
 - Whether a snap and the replayed terrain look correct on a real client.
-- Performance under load. Replays run on the event loop and have not been measured.
+- Performance under load on a live server and on the client. Replays run on the event loop; the codec part is measured
+  (see [Replay cost](#replay-cost)).
+
+## Replay cost
+
+Measured with `dev/bench/SectionCodecBench.java` (javac and the JVM from a 2-vCPU sandbox, 20 000 iterations, three runs):
+
+| Payload | Size | Per chunk | Full cache (2048 chunks) |
+|---|---|---|---|
+| Sparse, 24 sections | 3.8 KB | 1.8 to 2.5 µs | 4 to 5 ms |
+| Dense, 24 sections | 8.9 KB | 4.0 to 4.7 µs | 8 to 10 ms |
+
+These numbers cover the reslice only. They exclude the packet encoding that Geyser performs for Bedrock, the network,
+and the client's own processing, which are likely to dominate. A switch's freeze is the fixed `freeze-ms` timer, not
+the replay time.
+
+Replays cover only the chunks the cache holds. The cache follows `ClientboundForgetLevelChunkPacket`, so it holds
+the chunks the server believes the client has loaded. The Bedrock client can unload chunks on its own render distance,
+and a replay would then resend those for nothing. How large that waste is has not been measured. Restricting the
+replay to the visible area would avoid it, but would also skip chunks the client still holds, so it needs a live
+measurement first.
+
+Even halving the reslice would save only about 2 to 5 ms per switch, against a 400 ms freeze. Changes to the replay path
+should come with a measurement that shows the freeze or the replayed volume going down.
+
