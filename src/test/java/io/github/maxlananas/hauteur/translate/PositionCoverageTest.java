@@ -6,6 +6,7 @@ import org.geysermc.mcprotocollib.protocol.data.game.entity.object.Direction;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.Hand;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PlayerAction;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PositionElement;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundDamageEventPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerPositionPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundTeleportEntityPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundAcceptTeleportationPacket;
@@ -115,6 +116,24 @@ class PositionCoverageTest {
             List.of(), true);
         var out = (ClientboundTeleportEntityPacket) InboundYTransforms.apply(tp, 1440);
         assertEquals(60.0, out.getPosition().getY(), 0.0);
+    }
+
+    @Test
+    void absoluteDamageSourcePositionIsShifted() {
+        // The hurt direction points at a real-space place; in the window it must sit at the same place.
+        var hit = new ClientboundDamageEventPacket(7, 2, 3, 4, Vector3d.from(10.5, 1500, -2.25));
+        var out = (ClientboundDamageEventPacket) InboundYTransforms.apply(hit, 1440);
+        assertEquals(60.0, out.getSourcePosition().getY(), 0.0);
+        assertEquals(10.5, out.getSourcePosition().getX(), 0.0);
+        assertEquals(-2.25, out.getSourcePosition().getZ(), 0.0);
+        assertEquals(7, out.getEntityId());
+        assertEquals(3, out.getSourceCauseId());
+    }
+
+    @Test
+    void damageWithoutSourcePositionIsUntouched() {
+        var hit = new ClientboundDamageEventPacket(7, 2, -1, -1, null);
+        assertSame(hit, InboundYTransforms.apply(hit, 1440));
     }
 
     @Test

@@ -7,6 +7,7 @@ import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PositionEleme
 import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.GlobalPos;
 import org.geysermc.mcprotocollib.protocol.data.game.level.block.BlockChangeEntry;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundAddEntityPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundDamageEventPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundEntityPositionSyncPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundMoveMinecartPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundMoveVehiclePacket;
@@ -116,6 +117,15 @@ public final class InboundYTransforms {
         if (packet instanceof ClientboundSetDefaultSpawnPositionPacket p) {
             GlobalPos gp = p.getGlobalPos();
             return p.withGlobalPos(new GlobalPos(gp.getDimension(), shift(gp.getPosition(), offset)));
+        }
+        if (packet instanceof ClientboundDamageEventPacket p) {
+            // The source position is absolute (the place the hit came from). Absent when the source has none.
+            Vector3d src = p.getSourcePosition();
+            if (src == null) {
+                return packet;
+            }
+            return new ClientboundDamageEventPacket(p.getEntityId(), p.getSourceTypeId(), p.getSourceCauseId(),
+                p.getSourceDirectId(), Vector3d.from(src.getX(), src.getY() - offset, src.getZ()));
         }
         return packet;
     }

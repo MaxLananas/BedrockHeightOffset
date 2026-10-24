@@ -18,6 +18,7 @@ snapshot Geyser depends on). Re-audit on every Geyser bump, following [CONTRIBUT
 | `ClientboundBlockEventPacket`, `ClientboundBlockDestructionPacket`, `ClientboundLevelEventPacket` | position | A | |
 | `ClientboundLevelParticlesPacket`, `ClientboundSoundPacket` | y | A | Offsets and velocity are R. |
 | `ClientboundExplodePacket` | center | A | `playerKnockback` is R. |
+| `ClientboundDamageEventPacket` | sourcePosition (absolute, nullable) | A | Null when the source has no position. Entity and cause ids are not positions. |
 | `ClientboundAddEntityPacket` | y | A | |
 | `ClientboundTeleportEntityPacket` | position (absolute) | A | Relative Y (`R`) is not shifted. Player id: authoritative switch trigger. |
 | `ClientboundEntityPositionSyncPacket` | position | A | Player id: authoritative switch trigger. |

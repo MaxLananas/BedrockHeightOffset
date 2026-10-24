@@ -50,6 +50,8 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 - The held-write queue could exceed its limit under concurrent writes: producers checked the size, then added, so
   several could pass the check together. A slot is now reserved first, and the limit is exact (a test with eight
   racing producers shows 101 accepted entries against the old code, 100 against the new one).
+- Damage events carry an absolute source position. It was sent unshifted, so the hit direction pointed one window
+  offset away from the real source. It is now shifted like the explosion centre; an absent position is left as it is.
 - `/hauteur window` accepted `NaN`, infinite and out-of-dimension values, and the handler could anchor on a non-finite
   Y. Such a value could snap the client outside the world on detach. Both now refuse it, and a non-finite client Y
   drops the packet without moving the anchor.
