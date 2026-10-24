@@ -54,8 +54,9 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 - Player names: a stacked combining-mark name ("zalgo") is capped at three marks per base character, so it cannot bloat a
   log line. The zero-width joiner stays allowed, as documented.
 - Standalone Geyser without Erosion: direct world reads (collision correction, swimming and climbing checks) were shifted
-  by the offset a second time, because Geyser reads its own window-space chunk cache there. The wrapper now shifts only
-  the reads that reach the real world, with Geyser's own rule.
+  by the offset a second time, because Geyser reads its own window-space chunk cache there. This comes from reading
+  Geyser's source and was not reproduced live. The wrapper now shifts only the reads that reach the real world, with
+  Geyser's own rule.
 - With an Erosion backend, async lookups fell back to the synchronous read, and each batch read sent one request per
   block. Both now reach the delegate's async and batch methods, with the offset applied.
 - Failures that were swallowed silently are now logged: the session sweeper (each run and its scheduling), restoring
