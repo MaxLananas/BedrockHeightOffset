@@ -144,4 +144,51 @@ class CommandYRewriteTest {
         assertNull(CommandYRewrite.rewrite("tp 0 1e-2000000000 0", 16, CFG));
         assertNull(CommandYRewrite.rewrite("tp 0 1e300 0", 16, CFG));
     }
+
+    /**
+     * Property over random command shapes, with a fixed seed. For every rewrite: exactly one token changes, it is
+     * absolute in the input, and its new value is the old value plus the offset. Relative tokens never change.
+     */
+    @Test
+    void rewriteChangesOneAbsoluteYByExactlyTheOffset() {
+        String[] words = {"tp", "teleport", "tppos", "Steve", "@s", "@e[x=1,y=2]", "~", "~5", "^1", "^", "~-3.5",
+            "0", "-0", "64", "-64", "1.5", "-15.99999", "+7", ".5", "5.", "1e2", "1E-3", "-2.5e+3", "NaN",
+            "Infinity", "0x10", "1d", "30000000", "30000001", "1e400", "1e-2000000000", "12345678901234567890",
+            "90", "-90", "x", "/", "a=b"};
+        java.util.Random rnd = new java.util.Random(11);
+        int rewritten = 0;
+        for (int trial = 0; trial < 5000; trial++) {
+            StringBuilder sb = new StringBuilder(rnd.nextInt(3) == 0 ? "/" : "");
+            sb.append(rnd.nextInt(4) == 0 ? "tp" : words[rnd.nextInt(words.length)]);
+            int count = 1 + rnd.nextInt(8);
+            for (int i = 0; i < count; i++) {
+                sb.append(rnd.nextInt(5) == 0 ? "  " : " ").append(words[rnd.nextInt(words.length)]);
+            }
+            String in = sb.toString();
+            int offset = (rnd.nextInt(12) - 3) * 16;
+            String out = CommandYRewrite.rewrite(in, offset, CFG);
+            if (out == null) {
+                continue;
+            }
+            rewritten++;
+            String[] before = in.split(" ", -1);
+            String[] after = out.split(" ", -1);
+            assertEquals(before.length, after.length, in);
+            int changed = -1;
+            int changes = 0;
+            for (int i = 0; i < before.length; i++) {
+                if (!before[i].equals(after[i])) {
+                    changed = i;
+                    changes++;
+                }
+            }
+            assertEquals(1, changes, "exactly one token may change: " + in + " -> " + out);
+            String was = before[changed];
+            assertFalse(was.startsWith("~") || was.startsWith("^"), "relative token rewritten: " + in);
+            assertEquals(0, new java.math.BigDecimal(after[changed])
+                    .compareTo(new java.math.BigDecimal(was).add(java.math.BigDecimal.valueOf(offset))),
+                "value must be old + offset: " + in + " -> " + out);
+        }
+        assertTrue(rewritten > 100, "the generator must actually exercise rewrites, got " + rewritten);
+    }
 }
