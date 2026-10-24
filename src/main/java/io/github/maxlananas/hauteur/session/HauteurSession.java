@@ -70,9 +70,9 @@ public final class HauteurSession {
 
     private static final int WATCH_RING_LIMIT = 192;
     /**
-     * Distinct dropped destroys kept for the re-check after a freeze. Estimated, not measured: a Vector3i and its set
-     * entry are about 56 bytes, so 256 of them are about 16 KB per session. Past the limit a position is not re-checked; that is counted in
-     * {@link Stat#GHOST_OVERFLOWS}, not dropped silently.
+     * Distinct dropped destroys kept for the re-check after a freeze. Estimated, not measured: a Vector3i and its
+     * set entry are about 56 bytes, so 256 of them are about 16 KB per session. Past the limit a position is not
+     * re-checked; that is counted in {@link Stat#GHOST_OVERFLOWS}, not dropped silently.
      */
     public static final int GHOST_REVERT_LIMIT = 256;
 
@@ -146,6 +146,8 @@ public final class HauteurSession {
     /** Totals captured by the last {@link #resetStats()}, indexed like {@link #counters}. */
     private final long[] baseline = new long[Stat.values().length];
     private volatile boolean statsReset;
+    /** Chunk evictions of the cache already reflected in {@link Stat#CHUNK_EVICTED_BUDGET}. Guarded by this. */
+    private long budgetEvictionsCounted;
 
     // Accessors. Writers are the handler (transitions, on the channel's event loop, under freezeLock), HauteurCore
     // (attach and detach, and the reload path) and the watch command. The fields are volatile, so readers see the
@@ -317,9 +319,6 @@ public final class HauteurSession {
         }
         statsReset = true;
     }
-
-    /** Chunk evictions of the cache already reflected in {@link Stat#CHUNK_EVICTED_BUDGET}. */
-    private long budgetEvictionsCounted;
 
     /**
      * Copies the cache's budget evictions into the session counters. Called after each cache write, and before a
