@@ -72,4 +72,48 @@ class SwitchPolicyTest {
         }
         assertTrue(backoff <= SwitchPolicy.MAX_BACKOFF);
     }
+
+    /**
+     * Invariants over random states, with a fixed seed: a request always has a window reason; inside the cooldown
+     * and inside the window, a non-authoritative request is never made; the backoff stays in 1..MAX and doubles
+     * only within four cooldowns, otherwise it resets.
+     */
+    @Test
+    void policyInvariantsHoldOverRandomStates() {
+        java.util.Random rnd = new java.util.Random(21);
+        for (int trial = 0; trial < 20_000; trial++) {
+            int clientMinY = -512 + 16 * rnd.nextInt(64);
+            int clientHeight = 16 * (1 + rnd.nextInt(64));
+            int margin = 32 + rnd.nextInt(225);
+            int offset = 16 * rnd.nextInt(80);
+            int maxOffset = 16 * rnd.nextInt(120);
+            double realY = -700 + rnd.nextDouble() * 1600;
+            boolean authoritative = rnd.nextInt(5) == 0;
+            long cooldown = 250 + rnd.nextInt(5000);
+            int backoff = 1 + rnd.nextInt(SwitchPolicy.MAX_BACKOFF);
+            long now = rnd.nextInt(20_000);
+            long last = now - rnd.nextInt(30_000);
+
+            boolean request = SwitchPolicy.shouldRequest(realY, offset, clientMinY, clientHeight, margin, maxOffset,
+                authoritative, now, last, backoff, cooldown);
+            if (request) {
+                assertTrue(WindowRules.shouldSwitch(realY, offset, clientMinY, clientHeight, margin, maxOffset),
+                    "a request needs a window reason at realY=" + realY);
+            }
+            boolean inCooldown = now - last < cooldown * Math.max(1, backoff);
+            boolean outside = realY >= clientMinY
+                && SwitchPolicy.clientOutsideWindow(realY, offset, clientMinY, clientHeight);
+            if (!authoritative && inCooldown && !outside) {
+                assertFalse(request, "no request inside the cooldown while the client is inside its window");
+            }
+
+            int next = SwitchPolicy.nextBackoff(now, last, backoff, cooldown);
+            assertTrue(next >= 1 && next <= SwitchPolicy.MAX_BACKOFF, "backoff in range: " + next);
+            if (now - last < cooldown * 4) {
+                assertEquals(Math.min(SwitchPolicy.MAX_BACKOFF, backoff * 2), next);
+            } else {
+                assertEquals(1, next);
+            }
+        }
+    }
 }
