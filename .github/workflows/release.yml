@@ -59,8 +59,13 @@ jobs:
       - name: Checksums
         run: |
           set -euo pipefail
-          JAR="$(find target -maxdepth 1 -name 'hauteur-*.jar' ! -name 'original-*' -print -quit)"
-          test -n "$JAR"
+          # Exactly one candidate: a second jar (sources, a classifier) must fail the release, not be picked at random.
+          mapfile -t JARS < <(find target -maxdepth 1 -name 'hauteur-*.jar' ! -name 'original-*')
+          if [ "${#JARS[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one hauteur jar in target/, found ${#JARS[@]}"
+            exit 1
+          fi
+          JAR="${JARS[0]}"
           ( cd target && sha256sum "$(basename "$JAR")" > SHA256SUMS.txt )
           cp "$JAR" .
           cp target/SHA256SUMS.txt .
