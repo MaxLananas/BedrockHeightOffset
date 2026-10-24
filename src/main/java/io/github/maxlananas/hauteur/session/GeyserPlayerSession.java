@@ -49,7 +49,8 @@ public final class GeyserPlayerSession implements PlayerSession {
 
     @Override
     public int blockAt(int x, int y, int z) {
-        // Through the shifted world manager: the argument is a client-frame Y, the read is real.
+        // The argument is a client-frame Y. The shifted world manager maps it to where Geyser reads the block: the real
+        // world (offset added) or the window-space chunk cache (passed through). The caller never adds the offset.
         return session.getGeyser().getWorldManager().getBlockAt(session, x, y, z);
     }
 }

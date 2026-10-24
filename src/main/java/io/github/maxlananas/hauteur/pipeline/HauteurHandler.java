@@ -687,7 +687,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
                 }
                 int blockId;
                 try {
-                    // The wrapped world manager adds the current offset, so this reads the real block.
+                    // clientY is a client-frame Y. The shifted world manager resolves it to the block that is really there.
                     blockId = session.blockAt(raw.getX(), clientY, raw.getZ());
                 } catch (Throwable t) {
                     continue;
