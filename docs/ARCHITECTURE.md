@@ -82,7 +82,7 @@ whether another switch is needed. A teleport that arrived during the freeze is t
 - **Client movement** (`MovePlayerPos`, `MovePlayerPosRot`). Subject to the margin and the cooldown, except when the
   client is already outside its window: then the switch is not deferred (`window/SwitchPolicy`), because the view
   is missing content. Measured by simulation, not on a live client.
-- **Operator** (`/hauteur window`). Forced target, snap injected.
+- **Manual** (`/hauteur window`). Forced target, snap injected. Refused while the cooldown (times backoff) has not elapsed, so it cannot be used to replay the cache on every command.
 
 ### Journal
 
