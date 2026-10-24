@@ -52,6 +52,25 @@ class FrameResolverTest {
         assertEquals(FrameResolver.Frame.NONE, FrameResolver.blockAction(100, 500, 0, 448));
     }
 
+    @Test
+    void extremeClientBlockYNeverSelectsAFrame() {
+        // The client chooses this value. Int arithmetic would wrap MAX_VALUE + offset around to a negative number;
+        // widened arithmetic keeps both candidates far from any anchor, so the packet is dropped.
+        assertEquals(FrameResolver.Frame.NONE,
+            FrameResolver.blockAction(0, Integer.MAX_VALUE, 16, 32));
+        assertEquals(FrameResolver.Frame.NONE,
+            FrameResolver.blockAction(0, Integer.MIN_VALUE, 16, 32));
+    }
+
+    @Test
+    void nonFiniteInputsNeverSelectAFrame() {
+        // A NaN or infinite anchor or client Y has no plausible position; every comparison must fail closed.
+        assertEquals(FrameResolver.Frame.NONE, FrameResolver.movement(Double.NaN, 100, 0, 448, BOUND));
+        assertEquals(FrameResolver.Frame.NONE, FrameResolver.movement(100, Double.NaN, 0, 448, BOUND));
+        assertEquals(FrameResolver.Frame.NONE, FrameResolver.movement(100, Double.POSITIVE_INFINITY, 0, 448, BOUND));
+        assertEquals(FrameResolver.Frame.NONE, FrameResolver.movement(100, 100, 0, 448, Double.NaN));
+    }
+
     /**
      * Property: when the anchor is near the packet's true position and the switch delta is at least
      * 64 blocks, the resolver returns the true frame. It never returns the wrong frame for any delta.

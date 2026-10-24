@@ -59,8 +59,10 @@ final class FrameResolver {
      * @param clientBlockY block Y carried by the packet
      */
     static Frame blockAction(double anchorRealY, int clientBlockY, int previous, int current) {
+        // Widened before the addition: clientBlockY comes from the client and can be any int, and an int sum
+        // would wrap around to a small value that could look plausible.
         return classify(anchorRealY,
-            clientBlockY + previous + 0.5, clientBlockY + current + 0.5, REACH_BLOCKS);
+            (long) clientBlockY + previous + 0.5, (long) clientBlockY + current + 0.5, REACH_BLOCKS);
     }
 
     private static Frame classify(double anchorRealY, double candidatePrevious, double candidateCurrent, double bound) {
