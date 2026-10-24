@@ -45,6 +45,8 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
   the reads that reach the real world, with Geyser's own rule.
 - With an Erosion backend, async lookups fell back to the synchronous read, and each batch read sent one request per
   block. Both now reach the delegate's async and batch methods, with the offset applied.
+- Failures that were swallowed silently are now logged: the session sweeper (each run and its scheduling), restoring
+  the platform world manager, and re-reading a block to revert a dropped destroy. Each used to leave a stale state with no trace.
 - `/hauteur window` accepted `NaN`, infinite and out-of-dimension values, and the handler could anchor on a non-finite
   Y. Such a value could snap the client outside the world on detach. Both now refuse it, and a non-finite client Y
   drops the packet without moving the anchor.

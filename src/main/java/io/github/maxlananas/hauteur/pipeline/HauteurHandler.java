@@ -690,6 +690,9 @@ public final class HauteurHandler extends ChannelDuplexHandler {
                     // clientY is a client-frame Y. The shifted world manager resolves it to the block that is really there.
                     blockId = session.blockAt(raw.getX(), clientY, raw.getZ());
                 } catch (Throwable t) {
+                    // Not fatal for the other positions, but the client keeps a stale block here: report it.
+                    logger.error("[Hauteur] could not re-read a block to revert a dropped destroy at "
+                        + raw.getX() + "," + raw.getY() + "," + raw.getZ(), t);
                     continue;
                 }
                 managerContext.fireChannelRead(new ClientboundBlockUpdatePacket(

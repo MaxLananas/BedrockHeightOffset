@@ -164,12 +164,16 @@ public final class HauteurCore implements PipelineSettings {
                             }
                         }
                     }
-                } catch (Throwable ignored) {
-                    // sweep never must fail the scheduler
+                } catch (Throwable t) {
+                    // Swallowed so the periodic task keeps running, but reported: a sweep that fails on every run
+                    // leaves orphaned sessions behind, and nothing else would show it.
+                    extension.logger().warning("[Hauteur] session sweep failed; orphaned sessions may stay: " + t);
                 }
             }, 60, 60, TimeUnit.SECONDS);
-        } catch (Throwable ignored) {
-            // executor unavailable: states still cleaned by the disconnect event path
+        } catch (Throwable t) {
+            // Executor unavailable: states are still cleaned by the disconnect event path. Say so once.
+            extension.logger().warning("[Hauteur] could not schedule the session sweep; relying on disconnect events: "
+                + t);
         }
     }
 
@@ -415,8 +419,10 @@ public final class HauteurCore implements PipelineSettings {
             if (bootstrap != null && field.get(bootstrap) instanceof ShiftedWorldManager) {
                 field.set(bootstrap, original);
             }
-        } catch (Throwable ignored) {
-            // shutdown path; a leftover wrapper disappears with the process anyway
+        } catch (Throwable t) {
+            // A leftover wrapper is not harmless on a reload: the process keeps running. The next enable adopts it
+            // (see installShiftedWorldManager), so this is reported rather than fatal.
+            extension.logger().warning("[Hauteur] could not restore the platform world manager: " + t);
         }
         worldManagerShifted = false;
     }
