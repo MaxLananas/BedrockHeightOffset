@@ -7,6 +7,7 @@ import io.github.maxlananas.hauteur.session.HauteurSession;
 import io.github.maxlananas.hauteur.translate.InboundYTransforms;
 import io.github.maxlananas.hauteur.translate.OutboundYTransforms;
 import io.github.maxlananas.hauteur.translate.WindowedChunks;
+import io.github.maxlananas.hauteur.window.SwitchPolicy;
 import io.github.maxlananas.hauteur.window.WindowRules;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -483,12 +484,9 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             return;
         }
         HauteurConfig config = core.config();
-        if (!WindowRules.shouldSwitch(realY, state.offset(), w.clientMinY(), w.clientHeight(),
-            config.switchMarginBlocks, w.maxOffset())) {
-            return;
-        }
-        if (!authoritative && System.currentTimeMillis() - state.lastSwitchAtMs()
-            < config.switchCooldownMs * Math.max(1, state.switchBackoff())) {
+        if (!SwitchPolicy.shouldRequest(realY, state.offset(), w.clientMinY(), w.clientHeight(),
+            config.switchMarginBlocks, w.maxOffset(), authoritative, System.currentTimeMillis(),
+            state.lastSwitchAtMs(), state.switchBackoff(), config.switchCooldownMs)) {
             return;
         }
         ChannelHandlerContext self = ctx;
@@ -534,8 +532,8 @@ public final class HauteurHandler extends ChannelDuplexHandler {
                 return;
             }
             long now = System.currentTimeMillis();
-            long sinceLast = now - state.lastSwitchAtMs();
-            state.setSwitchBackoff(sinceLast < config.switchCooldownMs * 4 ? Math.min(8, state.switchBackoff() * 2) : 1);
+            state.setSwitchBackoff(SwitchPolicy.nextBackoff(now, state.lastSwitchAtMs(), state.switchBackoff(),
+                config.switchCooldownMs));
 
             long epoch = state.nextFreezeEpoch();
             state.setFrozen(true);

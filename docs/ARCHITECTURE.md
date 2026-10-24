@@ -77,7 +77,9 @@ whether another switch is needed. A teleport that arrived during the freeze is t
   `EntityPositionSync` for the player's id). The packet itself is the teleport the client receives, so no snap is
   injected. The cooldown is bypassed, because the client is already at that position. A relative Y is a delta
   from the anchor.
-- **Client movement** (`MovePlayerPos`, `MovePlayerPosRot`). Subject to the margin and the cooldown.
+- **Client movement** (`MovePlayerPos`, `MovePlayerPosRot`). Subject to the margin and the cooldown, except when the
+  client is already outside its window: then the switch is not deferred (`window/SwitchPolicy`), because the view
+  is missing content. Measured by simulation, not on a live client.
 - **Operator** (`/hauteur window`). Forced target, snap injected.
 
 ### Journal
