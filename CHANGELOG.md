@@ -34,6 +34,9 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 
 ### Fixed
 
+- The chunk cache evicted the oldest chunks to fit its budget without any record. Those chunks were then missing after a
+  window switch, with no counter to explain it. Budget evictions are now counted (`CHUNK_EVICTED_BUDGET`, shown by
+  `/hauteur stats`), and the README states the eviction rule.
 - `rewrite-commands=/tp` kept the slash, never matched a chat message, and silently disabled the rewrite. A leading
   slash is now accepted, and an entry that is not a plain command name is reported and ignored.
 - Window targets for very large heights (above about 2e9 blocks) overflowed an int product and went to offset 0, while

@@ -98,8 +98,11 @@ These are current, tested-or-documented facts, not promises:
 - **Ambiguous packets are dropped.** When a switch is small (for example a clamp at the world edge) and both
   frames are plausible, held movement is dropped rather than guessed. The player may stall briefly.
 - **Chunks above the cache budget are not replayed.** A chunk larger than `chunk-cache-max-megabytes` on its
-  own is not cached. After a switch it is missing until the server sends it again. A chunk whose block-change
-  journal exceeds 4096 positions is evicted for the same reason.
+  own is not cached. When the cached total exceeds the budget, the oldest chunks are evicted until it fits. Both
+  cases leave the client with its old frame for that chunk until the server sends it again. A chunk whose
+  block-change journal exceeds 4096 positions is evicted for the same reason. `/hauteur stats` counts the budget
+  evictions and the journal overflows separately, so a player who sees missing terrain after a switch can tell
+  which limit was hit. A large `chunk-cache-max-megabytes` is the fix for the first.
 - **Light data is not re-homed.** Geyser's core has no reference to light updates in a code search of its default
   branch, so this should not affect Bedrock output. That is evidence, not a live test, and it is re-checked on every
   Geyser bump. The data is kept with the chunk and counted against the budget.

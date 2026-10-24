@@ -74,7 +74,9 @@ public final class HauteurSession {
     public enum Stat {
         IN_TRANSLATED, OUT_TRANSLATED, CHUNK_WINDOWED, CHUNK_REPLAYS, WINDOW_SWITCHES, DROPPED_WHILE_FROZEN,
         CHUNK_ANOMALIES, ACTIONS_HELD, HELD_OVERFLOW, CHUNK_UNCACHEABLE, JOURNAL_OVERFLOWS, TRANSFORM_FAILURES,
-        FREEZE_COUNT, FREEZE_NANOS
+        FREEZE_COUNT, FREEZE_NANOS,
+        /** Chunks evicted to fit the cache budget; they are not replayed on a switch. */
+        CHUNK_EVICTED_BUDGET
     }
 
     private final WindowConfigSource windowConfigSource;
@@ -303,6 +305,21 @@ public final class HauteurSession {
             baseline[stat.ordinal()] = total(stat);
         }
         statsReset = true;
+    }
+
+    /** Chunk evictions of the cache already reflected in {@link Stat#CHUNK_EVICTED_BUDGET}. */
+    private long budgetEvictionsCounted;
+
+    /**
+     * Copies the cache's budget evictions into the session counters. Called after each cache write, and before a
+     * report, so that a reload that shrinks the budget is counted too.
+     */
+    public synchronized void countBudgetEvictions() {
+        long total = chunkCache.budgetEvictions();
+        if (total > budgetEvictionsCounted) {
+            add(Stat.CHUNK_EVICTED_BUDGET, total - budgetEvictionsCounted);
+            budgetEvictionsCounted = total;
+        }
     }
 
     public HauteurSession(WindowConfigSource windowConfigSource, int maxChunks, long maxBytes) {

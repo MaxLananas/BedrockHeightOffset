@@ -101,6 +101,8 @@ public final class ChunkCache {
     private int maxChunks;
     private long maxBytes;
     private long bytes;
+    /** Chunks evicted to fit the budget, ever. Monotonic: clearing the cache does not reset it. */
+    private long budgetEvictions;
 
     public ChunkCache(int maxChunks, long maxBytes) {
         this.maxChunks = maxChunks;
@@ -184,6 +186,15 @@ public final class ChunkCache {
         return byKey.size();
     }
 
+    /**
+     * Chunks evicted, oldest first, so that the total fits the count or byte budget. Such a chunk is not replayed
+     * on a switch, so the client keeps its old frame for it until the server sends it again. Counted here so the
+     * session can report it; the journal-overflow eviction is reported separately by {@link Record}.
+     */
+    public synchronized long budgetEvictions() {
+        return budgetEvictions;
+    }
+
     public synchronized long bytes() {
         return bytes;
     }
@@ -215,6 +226,7 @@ public final class ChunkCache {
             var eldest = byKey.entrySet().iterator().next();
             bytes -= eldest.getValue().bytes();
             byKey.remove(eldest.getKey());
+            budgetEvictions++;
         }
     }
 

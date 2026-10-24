@@ -148,6 +148,19 @@ class ChunkCacheTest {
     }
 
     @Test
+    void budgetEvictionsAreCountedForBothWritePathsAndSurviveClear() {
+        ChunkCache cache = new ChunkCache(2, 1 << 20);
+        for (int i = 0; i < 3; i++) {
+            cache.put(chunk(i, 0, 1000));
+        }
+        assertEquals(1, cache.budgetEvictions(), "the count limit evicts on put");
+        cache.resize(1, 1 << 20);
+        assertEquals(2, cache.budgetEvictions(), "a smaller budget evicts on resize");
+        cache.clear();
+        assertEquals(2, cache.budgetEvictions(), "clearing the cache is not an eviction");
+    }
+
+    @Test
     void nearestFirstOrdersByChunkDistance() {
         ChunkCache cache = new ChunkCache(64, 1 << 20);
         cache.put(chunk(10, 0, 10));

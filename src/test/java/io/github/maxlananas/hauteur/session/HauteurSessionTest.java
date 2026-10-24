@@ -1,7 +1,12 @@
 package io.github.maxlananas.hauteur.session;
 
+import org.geysermc.mcprotocollib.protocol.data.game.level.LightUpdateData;
+import org.geysermc.mcprotocollib.protocol.data.game.level.block.BlockEntityInfo;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundLevelChunkWithLightPacket;
 import org.junit.jupiter.api.Test;
 
+import java.util.BitSet;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -77,6 +82,21 @@ class HauteurSessionTest {
         assertEquals(0, state.chunkCache.size());
         state.resetChunkCache();
         assertEquals(0, state.chunkCache.size());
+    }
+
+    @Test
+    void budgetEvictionsReachTheSessionCounterExactlyOnce() {
+        HauteurSession state = new HauteurSession(
+            () -> HauteurSession.WindowConfig.of(-64, 1952, -512, 1024, 0), 64, 1 << 20);
+        for (int i = 0; i < 6; i++) {
+            state.chunkCache.put(new ClientboundLevelChunkWithLightPacket(i, 0, new byte[1000], Map.of(),
+                new BlockEntityInfo[0],
+                new LightUpdateData(new BitSet(), new BitSet(), new BitSet(), new BitSet(), List.of(), List.of())));
+        }
+        state.chunkCache.resize(2, 1 << 20);
+        state.countBudgetEvictions();
+        state.countBudgetEvictions();
+        assertEquals(4, state.sinceReset(HauteurSession.Stat.CHUNK_EVICTED_BUDGET));
     }
 
     @Test

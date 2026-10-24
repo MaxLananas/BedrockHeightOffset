@@ -225,6 +225,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
                 watch("IN", "LevelChunkWithLight", "larger than the cache budget; not replayable on switch");
             }
         }
+        state.countBudgetEvictions();
         int offset = state.offset();
         if (offset != 0 && applies) {
             WindowedChunks.Outcome windowed = WindowedChunks.window(chunk, w.chunkParams(offset));
@@ -294,6 +295,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         } else if (packet instanceof ClientboundBlockEntityDataPacket p) {
             worst = worse(worst, state.chunkCache.recordBlockEntity(p));
         }
+        state.countBudgetEvictions();
         if (worst == ChunkCache.Record.EVICTED_JOURNAL_OVERFLOW) {
             state.count(HauteurSession.Stat.JOURNAL_OVERFLOWS);
             if (state.watch()) {

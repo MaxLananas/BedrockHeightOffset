@@ -214,6 +214,7 @@ public final class HauteurCommand {
             send(session, "§aStats baseline reset for this session.");
             return;
         }
+        state.countBudgetEvictions(); // a reload may have shrunk the budget since the last cache write
         long freezes = state.sinceReset(HauteurSession.Stat.FREEZE_COUNT);
         long freezeNanos = state.sinceReset(HauteurSession.Stat.FREEZE_NANOS);
         String freezeAvg = freezes > 0
@@ -232,6 +233,8 @@ public final class HauteurCommand {
                 + " §7(overflow drops: §f" + state.sinceReset(HauteurSession.Stat.HELD_OVERFLOW) + "§7)",
             "§7chunks not replayable (over cache budget): §f" + state.sinceReset(HauteurSession.Stat.CHUNK_UNCACHEABLE)
                 + " §7| journal overflows (chunk evicted): §f" + state.sinceReset(HauteurSession.Stat.JOURNAL_OVERFLOWS),
+            "§7chunks evicted to fit the cache budget (not replayed): §f"
+                + state.sinceReset(HauteurSession.Stat.CHUNK_EVICTED_BUDGET),
             "§7packets dropped on transform failure (fail closed): §f" + state.sinceReset(HauteurSession.Stat.TRANSFORM_FAILURES),
             "§7freeze duration: §f" + freezeAvg + " §7| last: §f" + (state.lastFreezeNanos() / 1_000L) + " µs",
             "§7last frame used while frozen: §f" + state.frozenFrameOffset() + " §7| now: §f" + state.offset());
