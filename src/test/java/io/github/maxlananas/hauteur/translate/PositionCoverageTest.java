@@ -34,8 +34,6 @@ class PositionCoverageTest {
 
     private static final CommandYRewrite.Config NO_COMMANDS = new CommandYRewrite.Config(false, Set.of());
 
-    // ------------------------------------------------------------ freeze classification
-
     @Test
     void movementIsHeldNotTransmitted() {
         assertEquals(OutboundYTransforms.FrozenDisposition.HOLD_MOVEMENT,
@@ -85,8 +83,6 @@ class PositionCoverageTest {
         assertEquals(12.5, OutboundYTransforms.movementY(new ServerboundMovePlayerPosRotPacket(true, false, 1, 12.5, 3, 90f, 10f)));
         assertTrue(Double.isNaN(OutboundYTransforms.movementY(new ServerboundAcceptTeleportationPacket(7))));
     }
-
-    // ------------------------------------------------------------ server-side teleports
 
     @Test
     void absolutePlayerPositionIsShiftedIntoWindowSpace() {

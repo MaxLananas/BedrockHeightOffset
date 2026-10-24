@@ -149,8 +149,6 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         }
     }
 
-    // ---------------------------------------------------------------- inbound
-
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         if (!(msg instanceof MinecraftPacket packet)) {
@@ -310,8 +308,6 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             : b == ChunkCache.Record.RECORDED ? ChunkCache.Record.RECORDED : a;
     }
 
-    // ---------------------------------------------------------------- outbound
-
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) {
         if (!(msg instanceof MinecraftPacket packet)) {
@@ -457,8 +453,6 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             state.ghostRevertPositions.add(action.getPosition());
         }
     }
-
-    // ---------------------------------------------------------------- window switching
 
     /**
      * Requests a switch if the real Y at {@code realY} calls for one. Runs on any thread. The switch itself

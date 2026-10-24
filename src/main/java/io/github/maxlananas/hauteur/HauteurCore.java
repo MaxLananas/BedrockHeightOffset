@@ -202,8 +202,6 @@ public final class HauteurCore implements PipelineSettings {
         }
     }
 
-    // ------------------------------------------------------------------ config & state access
-
     public HauteurConfig config() {
         return config;
     }
@@ -243,8 +241,6 @@ public final class HauteurCore implements PipelineSettings {
     public boolean worldManagerShifted() {
         return worldManagerShifted;
     }
-
-    // ------------------------------------------------------------------ session lifecycle
 
     public void onSessionInitialized(GeyserConnection connection) {
         GeyserSession session = cast(connection);
@@ -344,8 +340,6 @@ public final class HauteurCore implements PipelineSettings {
         return clientSession instanceof NetworkSession networkSession ? networkSession.getChannel() : null;
     }
 
-    // ------------------------------------------------------------------ window snapshot
-
     private HauteurSession.WindowConfig recomputeWindow(GeyserSession session) {
         try {
             // ChunkCache exposes SECTION units; the window math works in block units end to end.
@@ -362,8 +356,6 @@ public final class HauteurCore implements PipelineSettings {
             return null;
         }
     }
-
-    // ------------------------------------------------------------------ world manager swap
 
     /**
      * Geyser keeps its {@link WorldManager} on the platform bootstrap, usually in a private field, so
