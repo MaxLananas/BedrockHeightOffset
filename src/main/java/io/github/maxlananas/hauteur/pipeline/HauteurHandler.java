@@ -447,13 +447,24 @@ public final class HauteurHandler extends ChannelDuplexHandler {
      * in the client's raw coordinates; both possible frames are re-checked when the freeze ends.
      */
     private void recordGhost(MinecraftPacket packet) {
-        if (packet instanceof ServerboundPlayerActionPacket action
-            && (action.getAction() == PlayerAction.START_DIGGING
-                || action.getAction() == PlayerAction.CANCEL_DIGGING
-                || action.getAction() == PlayerAction.FINISH_DIGGING)
-            && state.ghostRevertPositions.size() < HauteurSession.GHOST_REVERT_LIMIT) {
-            state.ghostRevertPositions.add(action.getPosition());
+        if (!(packet instanceof ServerboundPlayerActionPacket action)
+            || (action.getAction() != PlayerAction.START_DIGGING
+                && action.getAction() != PlayerAction.CANCEL_DIGGING
+                && action.getAction() != PlayerAction.FINISH_DIGGING)) {
+            return;
         }
+        Vector3i position = action.getPosition();
+        if (state.ghostRevertPositions.contains(position)) {
+            return; // the same block dug twice in one freeze needs one re-check
+        }
+        if (state.ghostRevertPositions.size() >= HauteurSession.GHOST_REVERT_LIMIT) {
+            state.count(HauteurSession.Stat.GHOST_OVERFLOWS);
+            if (state.watch()) {
+                watch("OUT", shortName(packet), "dropped destroy not re-checked: revert list full");
+            }
+            return;
+        }
+        state.ghostRevertPositions.add(position);
     }
 
     /**

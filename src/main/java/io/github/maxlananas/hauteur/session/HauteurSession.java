@@ -64,8 +64,12 @@ public final class HauteurSession {
     }
 
     private static final int WATCH_RING_LIMIT = 192;
-    /** Dropped-destroy positions remembered for an authoritative re-send; beyond this, the ghost is accepted. */
-    public static final int GHOST_REVERT_LIMIT = 8;
+    /**
+     * Distinct dropped destroys kept for the re-check after a freeze. A position is a Vector3i, so 256 of them are
+     * a few kilobytes per session. Past the limit a position is not re-checked; that is counted in
+     * {@link Stat#GHOST_OVERFLOWS}, not dropped silently.
+     */
+    public static final int GHOST_REVERT_LIMIT = 256;
 
     /**
      * Counters shown by {@code /hauteur stats}. Every counter is addressed through this enum, so a reset covers all
@@ -76,7 +80,9 @@ public final class HauteurSession {
         CHUNK_ANOMALIES, ACTIONS_HELD, HELD_OVERFLOW, CHUNK_UNCACHEABLE, JOURNAL_OVERFLOWS, TRANSFORM_FAILURES,
         FREEZE_COUNT, FREEZE_NANOS,
         /** Chunks evicted to fit the cache budget; they are not replayed on a switch. */
-        CHUNK_EVICTED_BUDGET
+        CHUNK_EVICTED_BUDGET,
+        /** Dropped destroys that could not be recorded for the re-check because the list was full. */
+        GHOST_OVERFLOWS
     }
 
     private final WindowConfigSource windowConfigSource;

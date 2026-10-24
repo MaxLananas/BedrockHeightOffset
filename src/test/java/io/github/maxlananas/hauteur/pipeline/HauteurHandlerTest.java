@@ -7,15 +7,21 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.embedded.EmbeddedChannel;
 import org.cloudburstmc.math.vector.Vector3f;
+import org.cloudburstmc.math.vector.Vector3i;
+import org.geysermc.mcprotocollib.protocol.data.game.entity.object.Direction;
+import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PlayerAction;
 import org.geysermc.mcprotocollib.protocol.data.game.level.LightUpdateData;
 import org.geysermc.mcprotocollib.protocol.data.game.level.block.BlockEntityInfo;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundTeleportEntityPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundBlockUpdatePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundLevelChunkWithLightPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundMovePlayerPosPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundPlayerActionPacket;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -244,6 +250,52 @@ class HauteurHandlerTest {
         var replayed = (ServerboundMovePlayerPosPacket) rig.channel.readOutbound();
         assertEquals(HIGH_REAL_Y + 1, replayed.getY(), 1e-9,
             "the held packet is replayed at its real Y (137 + offset 64)");
+    }
+
+    private static ServerboundPlayerActionPacket dig(int x, int y, int z) {
+        return new ServerboundPlayerActionPacket(PlayerAction.START_DIGGING, Vector3i.from(x, y, z), Direction.UP, 0);
+    }
+
+    /** Client Y 100 is visible in both candidate frames of the window (previous 0, current 64). */
+    private static final int DIG_Y = 100;
+
+    @Test
+    void droppedDestroysAreRevertedAfterTheFreezeUpToTheLimit() {
+        Rig rig = new Rig(windowNeeded());
+        rig.settings.config.freezeHoldActions = false; // dropped, so each one must be recorded for the re-check
+        rig.sendMove(rig.move(HIGH_REAL_Y));
+        rig.drainInbound();
+        int dugs = 10;
+        for (int x = 0; x < dugs; x++) {
+            rig.channel.writeOutbound(dig(x, DIG_Y, 0));
+        }
+        assertNull(rig.channel.readOutbound(), "a dropped destroy is not forwarded");
+        rig.endFreeze();
+        Set<Integer> reverted = new HashSet<>();
+        for (Object o : rig.drainInbound()) {
+            if (o instanceof ClientboundBlockUpdatePacket update) {
+                reverted.add(update.getEntry().getPosition().getX());
+            }
+        }
+        assertEquals(dugs, reverted.size(), "every dropped destroy is re-checked, not only the first eight");
+        assertEquals(0, rig.state.sinceReset(HauteurSession.Stat.GHOST_OVERFLOWS));
+    }
+
+    @Test
+    void destroysBeyondTheRevertListAreCountedNotSilentlyLost() {
+        Rig rig = new Rig(windowNeeded());
+        rig.settings.config.freezeHoldActions = false;
+        rig.sendMove(rig.move(HIGH_REAL_Y));
+        rig.drainInbound();
+        int dugs = HauteurSession.GHOST_REVERT_LIMIT + 44;
+        for (int x = 0; x < dugs; x++) {
+            rig.channel.writeOutbound(dig(x, DIG_Y, 0));
+        }
+        assertEquals(HauteurSession.GHOST_REVERT_LIMIT, rig.state.ghostRevertPositions.size());
+        assertEquals(44, rig.state.sinceReset(HauteurSession.Stat.GHOST_OVERFLOWS));
+        // The same block dug again while the freeze lasts is one entry, not an overflow.
+        rig.channel.writeOutbound(dig(0, DIG_Y, 0));
+        assertEquals(44, rig.state.sinceReset(HauteurSession.Stat.GHOST_OVERFLOWS));
     }
 
     @Test

@@ -100,7 +100,8 @@ whose journal exceeds 4096 positions is evicted instead of being replayed stale.
 
 Held overflow (more than 48 entries) is a drop. A dropped destroy (`START_DIGGING`, `CANCEL_DIGGING`,
 `FINISH_DIGGING`) is recorded so that its block is re-sent when the freeze ends. Both candidate frames are
-checked, and only positions inside the visible window are re-sent.
+checked, and only positions inside the visible window are re-sent. The record keeps up to 256 distinct positions
+per freeze. Past that, a destroy is not re-checked, and `/hauteur stats` counts it (`GHOST_OVERFLOWS`).
 
 Before this version, sign, command block, structure, jigsaw and pick-block packets were transmitted without
 translation during a freeze. They are now held as block actions.

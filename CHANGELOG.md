@@ -34,6 +34,9 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 
 ### Fixed
 
+- A dropped destroy was recorded for the re-check after a switch only for the first eight distinct positions of
+  that freeze. Later ones kept their block on the client until the next change to it, and nothing counted them.
+  The limit is now 256 positions (a few kilobytes), and anything beyond it is counted (`GHOST_OVERFLOWS`).
 - A player action that names no block (dropping an item, releasing the held item, swapping hands, stab) was shifted
   by the window offset and, during a switch, held and resolved as a block action. Its zero position is not a block, so
   the action was dropped when neither frame was plausible. The consequence (a released bow or food left in use on the
