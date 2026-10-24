@@ -293,6 +293,7 @@ public final class HauteurCore implements PipelineSettings {
         long delayMs = attempt < 10 ? 100L : 500L;
         GeyserImpl geyser = GeyserImpl.getInstance();
         if (geyser == null) {
+            state.setDegraded(true);
             extension.logger().warning("[Hauteur] Geyser is not running; no attach for this player");
             return;
         }
@@ -309,6 +310,7 @@ public final class HauteurCore implements PipelineSettings {
             return;
         }
         if (attempt > 100) {
+            state.setDegraded(true); // surfaced by /hauteur info and doctor; nothing else ever sets it
             extension.logger().warning("[Hauteur] could not attach to "
                 + LogSanitizer.playerName(session.bedrockUsername())
                 + " (downstream pipeline not found); this player stays in real space - no windowing"

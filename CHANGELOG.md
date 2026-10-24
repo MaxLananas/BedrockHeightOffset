@@ -34,6 +34,9 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 
 ### Fixed
 
+- `DEGRADED` status is now reported: `/hauteur info` and `doctor` show it when the pipeline never attached (after
+  the retry budget, or when Geyser is not running). The flag was read but never set.
+
 - Race in the dropped-destroy re-check list: the duplicate test, the size test and the add were separate steps
   across two threads, so the list could exceed its limit of 256 (measured: 257 entries in a contended run). They
   now happen under one lock in `HauteurSession.recordGhostRevert`.
