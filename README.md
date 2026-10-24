@@ -121,8 +121,8 @@ These are current, tested-or-documented facts, not promises:
   for the session (fail closed) and logged once. The quarantine belongs to the session: a reconnect starts with
   an empty list.
 - **Performance is measured on the codec and on synthetic chunks only.** A window switch replays every cached chunk on
-  the channel event loop. On a 2-vCPU sandbox, `dev/bench/SectionCodecBench.java` reslices a chunk in about 2 µs
-  (sparse) to 4.5 µs (dense), so a full 2048-chunk replay is about 4 to 10 ms of CPU. The configured freeze
+  the channel event loop. On a 2-vCPU sandbox, `dev/bench/SectionCodecBench.java` reslices a chunk in 1.5 to 3.4 µs
+  (sparse) or 3.8 to 4.8 µs (dense), so a full 2048-chunk replay is about 3 to 10 ms of CPU. The configured freeze
   (`freeze-ms`, 400 ms) is a fixed timer, not the replay time. The network and client-side cost of the replay, and any
   cost on a live server, have not been measured. See [ARCHITECTURE.md](docs/ARCHITECTURE.md#replay-cost).
 

@@ -194,12 +194,13 @@ box shifted and the result indexed as before.
 
 ## Replay cost
 
-Measured with `dev/bench/SectionCodecBench.java` (javac and the JVM from a 2-vCPU sandbox, 20 000 iterations, three runs):
+Measured with `dev/bench/SectionCodecBench.java`, compiled with ECJ and run on the JRE 25 of a 2-vCPU sandbox
+(20 000 iterations per run, six runs in total; the ranges below are the min and max across them):
 
 | Payload | Size | Per chunk | Full cache (2048 chunks) |
 |---|---|---|---|
-| Sparse, 24 sections | 3.8 KB | 1.8 to 2.5 µs | 4 to 5 ms |
-| Dense, 24 sections | 8.9 KB | 4.0 to 4.7 µs | 8 to 10 ms |
+| Sparse, 24 sections | 3.8 KB | 1.5 to 3.4 µs | 3 to 7 ms |
+| Dense, 24 sections | 8.9 KB | 3.8 to 4.8 µs | 8 to 10 ms |
 
 These numbers cover the reslice only. They exclude the packet encoding that Geyser performs for Bedrock, the network,
 and the client's own processing, which are likely to dominate. A switch's freeze is the fixed `freeze-ms` timer, not
@@ -211,6 +212,6 @@ and a replay would then resend those for nothing. How large that waste is has no
 replay to the visible area would avoid it, but would also skip chunks the client still holds, so it needs a live
 measurement first.
 
-Even halving the reslice would save only about 2 to 5 ms per switch, against a 400 ms freeze. Changes to the replay path
+Even halving the reslice would save only about 1.5 to 5 ms per switch, against a 400 ms freeze. Changes to the replay path
 should come with a measurement that shows the freeze or the replayed volume going down.
 
