@@ -115,4 +115,37 @@ class HeldQueueTest {
         assertEquals(producers * perProducer, queue.size() + drained.get(),
             "every offered entry is either queued or drained; none lost");
     }
+
+    @Test
+    void concurrentProducersNeverExceedTheLimit() throws Exception {
+        // Eight producers race for a limit of 100 with nothing draining. The cap must be exact, not "about 100".
+        EmbeddedChannel channel = new EmbeddedChannel();
+        int limit = 100;
+        int producers = 8;
+        int perProducer = 5_000;
+        HeldQueue queue = new HeldQueue(limit, () -> { });
+        AtomicInteger accepted = new AtomicInteger();
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(producers);
+        for (int p = 0; p < producers; p++) {
+            new Thread(() -> {
+                try {
+                    start.await();
+                    for (int i = 0; i < perProducer; i++) {
+                        if (queue.offer(new HeldQueue.Entry("x", new TestPromise(channel), false))) {
+                            accepted.incrementAndGet();
+                        }
+                    }
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    done.countDown();
+                }
+            }).start();
+        }
+        start.countDown();
+        done.await();
+        assertEquals(limit, accepted.get(), "exactly the limit is accepted");
+        assertEquals(limit, queue.size());
+    }
 }
