@@ -9,15 +9,15 @@ public final class LogSanitizer {
     public static final int MAX_NAME_LENGTH = 32;
     /** Combining marks kept after one base character. Enough for stacked vowel and tone marks in real scripts. */
     static final int MAX_COMBINING_MARKS = 3;
-    private static final char ZERO_WIDTH_JOINER = 0x200D;
+    private static final int ZERO_WIDTH_JOINER = 0x200D;
 
     private LogSanitizer() {
     }
 
     /**
      * Returns a single-line rendering of a player name. Control characters (C0, DEL, C1), format characters
-     * (bidirectional overrides and isolates, zero-width spaces, byte-order marks) and line or paragraph
-     * separators become {@code '?'}, so a name cannot reorder, split or forge a log line. The zero-width joiner
+     * (bidirectional overrides and isolates, zero-width spaces, byte-order marks), line or paragraph separators
+     * and unpaired surrogates become {@code '?'}, so a name cannot reorder, split or forge a log line. The zero-width joiner
      * U+200D is kept on purpose, so emoji sequences stay readable. Combining marks are kept up to
      * {@link #MAX_COMBINING_MARKS} per base character; more are replaced, so a stacked "zalgo" name cannot
      * bloat a log line. The result is at most {@link #MAX_NAME_LENGTH} chars, and a cut never splits a surrogate
@@ -27,40 +27,51 @@ public final class LogSanitizer {
         if (name == null || name.isEmpty()) {
             return "?";
         }
-        int length = Math.min(name.length(), MAX_NAME_LENGTH);
-        if (length < name.length() && Character.isHighSurrogate(name.charAt(length - 1))) {
-            length--;
+        int end = Math.min(name.length(), MAX_NAME_LENGTH);
+        if (end < name.length() && Character.isHighSurrogate(name.charAt(end - 1))) {
+            end--; // the cut would split a surrogate pair; drop the lone high half
         }
-        StringBuilder sb = new StringBuilder(length);
+        StringBuilder sb = new StringBuilder(end);
         int marks = 0;
-        for (int i = 0; i < length; i++) {
-            char c = name.charAt(i);
-            if (isCombiningMark(c)) {
+        // Walk code points, not UTF-16 units: a supplementary mark is one mark, and a lone surrogate is one '?'.
+        for (int i = 0; i < end; ) {
+            int cp = name.codePointAt(i);
+            i += Character.charCount(cp);
+            if (isCombiningMark(cp)) {
                 marks++;
-                sb.append(marks > MAX_COMBINING_MARKS ? '?' : c);
+                if (marks > MAX_COMBINING_MARKS) {
+                    sb.append('?');
+                } else {
+                    sb.appendCodePoint(cp);
+                }
                 continue;
             }
             marks = 0;
-            sb.append(isUnsafe(c) ? '?' : c);
+            if (isUnsafe(cp)) {
+                sb.append('?');
+            } else {
+                sb.appendCodePoint(cp);
+            }
         }
         return sb.toString();
     }
 
-    private static boolean isCombiningMark(char c) {
-        int type = Character.getType(c);
+    private static boolean isCombiningMark(int cp) {
+        int type = Character.getType(cp);
         return type == Character.NON_SPACING_MARK || type == Character.ENCLOSING_MARK
             || type == Character.COMBINING_SPACING_MARK;
     }
 
-    private static boolean isUnsafe(char c) {
-        if (c < 0x20 || (c >= 0x7F && c <= 0x9F)) {
+    private static boolean isUnsafe(int cp) {
+        if (cp < 0x20 || (cp >= 0x7F && cp <= 0x9F)) {
             return true; // C0 controls, DEL, C1 controls
         }
-        if (c == ZERO_WIDTH_JOINER) {
+        if (cp == ZERO_WIDTH_JOINER) {
             // Joins emoji sequences and hides nothing by itself; replacing it would garble names like family emoji.
             return false;
         }
-        int type = Character.getType(c);
-        return type == Character.FORMAT || type == Character.LINE_SEPARATOR || type == Character.PARAGRAPH_SEPARATOR;
+        int type = Character.getType(cp);
+        return type == Character.SURROGATE // an unpaired surrogate is not valid text
+            || type == Character.FORMAT || type == Character.LINE_SEPARATOR || type == Character.PARAGRAPH_SEPARATOR;
     }
 }

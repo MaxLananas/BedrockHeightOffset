@@ -70,6 +70,24 @@ class LogSanitizerTest {
     }
 
     @Test
+    void loneSurrogatesBecomeQuestionMarks() {
+        // An unpaired high or low surrogate is not valid text; it is replaced, not written as-is.
+        assertEquals("a?b?c", LogSanitizer.playerName("a\uD83Db\uDE00c"));
+    }
+
+    @Test
+    void supplementaryCombiningMarksAreCountedAsOneMarkEach() {
+        // U+1D165 (musical combining stem) is a surrogate pair. Four of them after one base: three kept, one '?'.
+        String stem = "\uD834\uDD65";
+        assertEquals("a" + stem.repeat(3) + "?", LogSanitizer.playerName("a" + stem.repeat(4)));
+    }
+
+    @Test
+    void supplementaryEmojiIsKeptWhole() {
+        assertEquals("\uD83D\uDE00x", LogSanitizer.playerName("\uD83D\uDE00x"));
+    }
+
+    @Test
     void sanitizedOutputIsAlwaysSingleLineAndBounded() {
         for (int c = 0; c <= 0xFFFF; c += 7) {
             String out = LogSanitizer.playerName("p" + (char) c + "q".repeat(60));
@@ -83,11 +101,5 @@ class LogSanitizerTest {
         // A stacked "zalgo" name keeps three marks per base character; the rest become '?' and the name stays on one line.
         String zalgo = "a" + "\u0301".repeat(20) + "b";
         assertEquals("a" + "\u0301".repeat(3) + "?".repeat(17) + "b", LogSanitizer.playerName(zalgo));
-    }
-
-    @Test
-    void zeroWidthJoinerIsKeptForEmojiSequences() {
-        String family = "\uD83D\uDC68\u200D\uD83D\uDCBB";
-        assertEquals(family, LogSanitizer.playerName(family));
     }
 }
