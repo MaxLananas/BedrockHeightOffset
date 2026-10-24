@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/logo/hauteur-512.png" width="128" alt="Hauteur logo">
-</p>
-
 # Hauteur
 
 Hauteur is a [Geyser](https://geysermc.org) extension. It lets Bedrock players build and move at Java-world

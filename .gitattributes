@@ -5,7 +5,5 @@
 *.xml text eol=lf
 *.py text eol=lf
 *.jar binary
-*.png binary
-*.svg text eol=lf
 *.properties text eol=lf
 *.sh text eol=lf
