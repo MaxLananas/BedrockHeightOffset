@@ -116,4 +116,15 @@ class SwitchPolicyTest {
             }
         }
     }
+
+    @Test
+    void manualRehomeWaitsOutTheCooldownAndTheBackoff() {
+        assertFalse(SwitchPolicy.manualAllowed(10_000 + 1999, 10_000, 1, COOLDOWN));
+        assertTrue(SwitchPolicy.manualAllowed(10_000 + 2000, 10_000, 1, COOLDOWN));
+        // Backoff 4 stretches the wait to 8 s: a player repeating the command cannot replay the cache every 2 s.
+        assertFalse(SwitchPolicy.manualAllowed(10_000 + 7999, 10_000, 4, COOLDOWN));
+        assertTrue(SwitchPolicy.manualAllowed(10_000 + 8000, 10_000, 4, COOLDOWN));
+        // A zero or negative backoff is treated as 1, never as a free pass.
+        assertFalse(SwitchPolicy.manualAllowed(10_000 + 1999, 10_000, 0, COOLDOWN));
+    }
 }

@@ -54,6 +54,14 @@ public final class SwitchPolicy {
     }
 
     /**
+     * Whether a manual re-home ({@code /hauteur window}) may switch now. It is not an automatic switch and needs no
+     * position check, but every switch resends the cached chunks, so it waits out the same cooldown, times the backoff.
+     */
+    public static boolean manualAllowed(long nowMs, long lastSwitchMs, int backoff, long cooldownMs) {
+        return nowMs - lastSwitchMs >= cooldownMs * Math.max(1, backoff);
+    }
+
+    /**
      * The backoff after a switch: doubled when the previous switch was less than four cooldowns ago, otherwise reset.
      */
     public static int nextBackoff(long nowMs, long lastSwitchMs, int backoff, long cooldownMs) {

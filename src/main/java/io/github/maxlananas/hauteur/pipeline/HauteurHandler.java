@@ -538,7 +538,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             long now = System.currentTimeMillis();
             // A manual re-home (/hauteur window) is not an automatic switch, but it still must not be a way to
             // replay the whole cache on every command: each switch resends every cached chunk to the client.
-            if (manual && now - state.lastSwitchAtMs() < config.switchCooldownMs * Math.max(1, state.switchBackoff())) {
+            if (manual && !SwitchPolicy.manualAllowed(now, state.lastSwitchAtMs(), state.switchBackoff(), config.switchCooldownMs)) {
                 return;
             }
             state.setSwitchBackoff(SwitchPolicy.nextBackoff(now, state.lastSwitchAtMs(), state.switchBackoff(),
