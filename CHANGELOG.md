@@ -34,6 +34,13 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 
 ### Fixed
 
+- `rewrite-commands=/tp` kept the slash, never matched a chat message, and silently disabled the rewrite. A leading
+  slash is now accepted, and an entry that is not a plain command name is reported and ignored.
+- Window targets for very large heights (above about 2e9 blocks) overflowed an int product and went to offset 0, while
+  larger values went to the maximum. The snap is now computed and clamped in double precision; non-finite heights give 0.
+- Player names: a stacked combining-mark name ("zalgo") is capped at three marks per base character, so it cannot bloat a
+  log line. The zero-width joiner stays allowed, as documented.
+
 - `/hauteur window` accepted `NaN`, infinite and out-of-dimension values, and the handler could anchor on a non-finite
   Y. Such a value could snap the client outside the world on detach. Both now refuse it, and a non-finite client Y
   drops the packet without moving the anchor.
