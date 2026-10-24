@@ -7,6 +7,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LogSanitizerTest {
 
@@ -101,5 +102,58 @@ class LogSanitizerTest {
         // A stacked "zalgo" name keeps three marks per base character; the rest become '?' and the name stays on one line.
         String zalgo = "a" + "\u0301".repeat(20) + "b";
         assertEquals("a" + "\u0301".repeat(3) + "?".repeat(17) + "b", LogSanitizer.playerName(zalgo));
+    }
+
+    /**
+     * Invariants over random code points, with a fixed seed: the result is at most MAX_NAME_LENGTH units, has no
+     * C0, DEL or C1 control, no line or paragraph separator, no format character other than the zero-width joiner,
+     * no lone surrogate, and sanitising twice changes nothing.
+     */
+    @Test
+    void sanitizedNamesAreSingleSafeLinesAndStable() {
+        java.util.Random rnd = new java.util.Random(5);
+        for (int trial = 0; trial < 20_000; trial++) {
+            StringBuilder in = new StringBuilder();
+            int length = rnd.nextInt(80);
+            for (int i = 0; i < length; i++) {
+                int pick = rnd.nextInt(8);
+                if (pick == 6) {
+                    in.append((char) (0xD800 + rnd.nextInt(0x800))); // a surrogate unit, possibly lone
+                    continue;
+                }
+                int cp;
+                if (pick < 3) {
+                    cp = rnd.nextInt(0x80);
+                } else if (pick < 4) {
+                    cp = 0x7F + rnd.nextInt(0x40);
+                } else if (pick < 5) {
+                    cp = 0x0300 + rnd.nextInt(0x70);
+                } else if (pick < 6) {
+                    cp = 0x2000 + rnd.nextInt(0x100);
+                } else {
+                    cp = rnd.nextInt(0x110000);
+                }
+                in.appendCodePoint(cp);
+            }
+            String raw = in.toString();
+            String out = LogSanitizer.playerName(raw);
+            assertTrue(out.length() <= LogSanitizer.MAX_NAME_LENGTH, "too long: " + out.length());
+            for (int i = 0; i < out.length(); i++) {
+                char c = out.charAt(i);
+                assertFalse(c < 0x20 || (c >= 0x7F && c <= 0x9F), "control character kept in " + out);
+                assertFalse(c == 0x2028 || c == 0x2029, "line separator kept in " + out);
+                if (c != 0x200D) {
+                    assertFalse(Character.getType(c) == Character.FORMAT, "format character kept in " + out);
+                }
+                if (Character.isHighSurrogate(c)) {
+                    assertTrue(i + 1 < out.length() && Character.isLowSurrogate(out.charAt(i + 1)),
+                        "lone high surrogate in " + out);
+                    i++;
+                } else {
+                    assertFalse(Character.isLowSurrogate(c), "lone low surrogate in " + out);
+                }
+            }
+            assertEquals(out, LogSanitizer.playerName(out), "sanitising must be idempotent for " + raw);
+        }
     }
 }
