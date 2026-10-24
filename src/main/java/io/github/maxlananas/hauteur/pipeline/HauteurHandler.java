@@ -137,7 +137,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         synchronized (freezeLock) {
             double realY = state.lastSeenRealY();
             held.clearAndComplete(); // released before the snap: their promises complete, the frame is gone
-            state.ghostRevertPositions.clear();
+            state.clearGhostReverts();
             state.setFrozen(false);
             state.setOffset(0);
             state.setFrozenFrameOffset(0);
@@ -186,7 +186,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             return;
         }
         if (packet instanceof ClientboundForgetLevelChunkPacket forget) {
-            state.chunkCache.forget(forget.getX(), forget.getZ());
+            state.chunkCache().forget(forget.getX(), forget.getZ());
             ctx.fireChannelRead(forget);
             return;
         }
@@ -220,7 +220,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         // window, nothing is cached and the feature stays idle.
         HauteurSession.WindowConfig w = state.window();
         boolean applies = w != null && w.needed();
-        if (applies && !state.chunkCache.put(chunk)) {
+        if (applies && !state.chunkCache().put(chunk)) {
             state.count(HauteurSession.Stat.CHUNK_UNCACHEABLE);
             if (state.watch()) {
                 watch("IN", "LevelChunkWithLight", "larger than the cache budget; not replayable on switch");
@@ -288,13 +288,13 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         }
         ChunkCache.Record worst = ChunkCache.Record.NOT_CACHED;
         if (packet instanceof ClientboundBlockUpdatePacket p) {
-            worst = worse(worst, state.chunkCache.recordBlock(p.getEntry()));
+            worst = worse(worst, state.chunkCache().recordBlock(p.getEntry()));
         } else if (packet instanceof ClientboundSectionBlocksUpdatePacket p) {
             for (BlockChangeEntry entry : p.getEntries()) {
-                worst = worse(worst, state.chunkCache.recordBlock(entry));
+                worst = worse(worst, state.chunkCache().recordBlock(entry));
             }
         } else if (packet instanceof ClientboundBlockEntityDataPacket p) {
-            worst = worse(worst, state.chunkCache.recordBlockEntity(p));
+            worst = worse(worst, state.chunkCache().recordBlockEntity(p));
         }
         state.countBudgetEvictions();
         if (worst == ChunkCache.Record.EVICTED_JOURNAL_OVERFLOW) {
@@ -454,18 +454,15 @@ public final class HauteurHandler extends ChannelDuplexHandler {
                 && action.getAction() != PlayerAction.FINISH_DIGGING)) {
             return;
         }
-        Vector3i position = action.getPosition();
-        if (state.ghostRevertPositions.contains(position)) {
-            return; // the same block dug twice in one freeze needs one re-check
-        }
-        if (state.ghostRevertPositions.size() >= HauteurSession.GHOST_REVERT_LIMIT) {
-            state.count(HauteurSession.Stat.GHOST_OVERFLOWS);
-            if (state.watch()) {
-                watch("OUT", shortName(packet), "dropped destroy not re-checked: revert list full");
+        switch (state.recordGhostRevert(action.getPosition())) {
+            case RECORDED, DUPLICATE -> { } // a block dug twice in one freeze needs one re-check
+            case FULL -> {
+                state.count(HauteurSession.Stat.GHOST_OVERFLOWS);
+                if (state.watch()) {
+                    watch("OUT", shortName(packet), "dropped destroy not re-checked: revert list full");
+                }
             }
-            return;
         }
-        state.ghostRevertPositions.add(position);
     }
 
     /**
@@ -498,13 +495,13 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             performSwitch(realY, !authoritative, generation);
             return;
         }
-        if (!state.switchQueued.compareAndSet(false, true)) {
+        if (!state.switchQueued().compareAndSet(false, true)) {
             return;
         }
         try {
             self.channel().eventLoop().execute(() -> performSwitch(realY, !authoritative, generation));
         } catch (Throwable t) {
-            state.switchQueued.set(false); // channel closing; never leave the latch stuck
+            state.switchQueued().set(false); // channel closing; never leave the latch stuck
         }
     }
 
@@ -518,7 +515,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
      */
     private void performSwitch(double realY, boolean injectSnap, long generation) {
         synchronized (freezeLock) {
-            state.switchQueued.set(false);
+            state.switchQueued().set(false);
             HauteurSession.WindowConfig w = state.window();
             ChannelHandlerContext self = ctx;
             if (self == null || !self.channel().isActive() || !core.running() || w == null || !w.needed()
@@ -543,7 +540,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             state.setSwitchStartNanos(System.nanoTime());
             state.setLastSwitchAtMs(now);
             held.clearAndComplete();
-            state.ghostRevertPositions.clear();
+            state.clearGhostReverts();
             state.count(HauteurSession.Stat.WINDOW_SWITCHES);
 
             replayWorld(w, target);
@@ -598,7 +595,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             try {
                 if (self == null || !self.channel().isActive()) {
                     held.clearAndComplete();
-                    state.ghostRevertPositions.clear();
+                    state.clearGhostReverts();
                 } else {
                     flushHeld();
                     revertDestroyedGhosts();
@@ -606,7 +603,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             } catch (Throwable t) {
                 logger.error("[Hauteur] unfreeze failed; held packets were dropped", t);
                 held.clearAndComplete();
-                state.ghostRevertPositions.clear();
+                state.clearGhostReverts();
             } finally {
                 state.setFrozen(false);
             }
@@ -681,13 +678,14 @@ public final class HauteurHandler extends ChannelDuplexHandler {
      * positions inside the visible window are sent.
      */
     private void revertDestroyedGhosts() {
-        if (state.ghostRevertPositions.isEmpty()) {
+        List<Vector3i> pending = state.takeGhostReverts();
+        if (pending.isEmpty()) {
             return;
         }
         HauteurSession.WindowConfig w = state.window();
         int previous = state.frozenFrameOffset();
         int current = state.offset();
-        for (Vector3i raw : new ArrayList<>(state.ghostRevertPositions)) {
+        for (Vector3i raw : pending) {
             if (w == null) {
                 break;
             }
@@ -710,7 +708,6 @@ public final class HauteurHandler extends ChannelDuplexHandler {
                     new BlockChangeEntry(Vector3i.from(raw.getX(), clientY, raw.getZ()), blockId)));
             }
         }
-        state.ghostRevertPositions.clear();
     }
 
     /**
@@ -722,7 +719,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         // Floor, not truncation: for x in (-1, 0) the truncated block coordinate would sort chunk 0 before chunk -1.
         int blockX = (int) Math.floor(p.getX());
         int blockZ = (int) Math.floor(p.getZ());
-        for (ChunkCache.Entry entry : state.chunkCache.nearestFirst(blockX, blockZ)) {
+        for (ChunkCache.Entry entry : state.chunkCache().nearestFirst(blockX, blockZ)) {
             try {
                 WindowedChunks.Outcome windowed = WindowedChunks.window(entry.packet(), w.chunkParams(target));
                 if (windowed.anomaly()) {
@@ -793,9 +790,9 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             state.nextFreezeEpoch();
             state.setOffset(0);
             state.setFrozenFrameOffset(0);
-            state.switchQueued.set(false);
+            state.switchQueued().set(false);
             held.clearAndComplete(); // never leave Geyser's write futures hanging
-            state.ghostRevertPositions.clear();
+            state.clearGhostReverts();
         }
     }
 

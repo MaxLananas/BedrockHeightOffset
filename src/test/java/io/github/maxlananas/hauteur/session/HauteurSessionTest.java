@@ -79,9 +79,9 @@ class HauteurSessionTest {
         state.refreshWindow();
         assertTrue(state.window().needed());
         // cache starts empty and survives resets
-        assertEquals(0, state.chunkCache.size());
+        assertEquals(0, state.chunkCache().size());
         state.resetChunkCache();
-        assertEquals(0, state.chunkCache.size());
+        assertEquals(0, state.chunkCache().size());
     }
 
     @Test
@@ -103,11 +103,11 @@ class HauteurSessionTest {
         HauteurSession state = new HauteurSession(
             () -> HauteurSession.WindowConfig.of(-64, 1952, -512, 1024, 0), 64, 1 << 20);
         for (int i = 0; i < 6; i++) {
-            state.chunkCache.put(new ClientboundLevelChunkWithLightPacket(i, 0, new byte[1000], Map.of(),
+            state.chunkCache().put(new ClientboundLevelChunkWithLightPacket(i, 0, new byte[1000], Map.of(),
                 new BlockEntityInfo[0],
                 new LightUpdateData(new BitSet(), new BitSet(), new BitSet(), new BitSet(), List.of(), List.of())));
         }
-        state.chunkCache.resize(2, 1 << 20);
+        state.chunkCache().resize(2, 1 << 20);
         state.countBudgetEvictions();
         state.countBudgetEvictions();
         assertEquals(4, state.sinceReset(HauteurSession.Stat.CHUNK_EVICTED_BUDGET));
@@ -183,5 +183,41 @@ class HauteurSessionTest {
         assertEquals(gen + 1, state.nextWorldGeneration());
         assertEquals(gen + 1, state.worldGeneration());
     }
-}
 
+    @Test
+    void droppedDestroysAreRecordedOnceAndCappedUnderContention() throws Exception {
+        HauteurSession state = new HauteurSession(() -> null, 64, 1 << 20);
+        org.cloudburstmc.math.vector.Vector3i same = org.cloudburstmc.math.vector.Vector3i.from(1, 2, 3);
+        assertEquals(HauteurSession.GhostRecord.RECORDED, state.recordGhostRevert(same));
+        assertEquals(HauteurSession.GhostRecord.DUPLICATE, state.recordGhostRevert(same));
+        assertEquals(List.of(same), state.takeGhostReverts());
+        assertEquals(0, state.ghostRevertCount());
+
+        // Eight threads race for more positions than the limit. A check-then-add without one lock let
+        // the list grow past the limit; the cap must hold exactly.
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger recorded = new java.util.concurrent.atomic.AtomicInteger();
+        List<java.util.concurrent.Future<?>> tasks = new java.util.ArrayList<>();
+        for (int t = 0; t < 8; t++) {
+            int base = t * 1000;
+            tasks.add(pool.submit(() -> {
+                go.await();
+                for (int i = 0; i < 1000; i++) {
+                    if (state.recordGhostRevert(org.cloudburstmc.math.vector.Vector3i.from(base + i, 0, 0))
+                        == HauteurSession.GhostRecord.RECORDED) {
+                        recorded.incrementAndGet();
+                    }
+                }
+                return null;
+            }));
+        }
+        go.countDown();
+        for (java.util.concurrent.Future<?> task : tasks) {
+            task.get();
+        }
+        pool.shutdown();
+        assertEquals(HauteurSession.GHOST_REVERT_LIMIT, recorded.get());
+        assertEquals(HauteurSession.GHOST_REVERT_LIMIT, state.ghostRevertCount());
+    }
+}

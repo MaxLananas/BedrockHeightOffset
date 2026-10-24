@@ -34,6 +34,12 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 
 ### Fixed
 
+- Race in the dropped-destroy re-check list: the duplicate test, the size test and the add were separate steps
+  across two threads, so the list could exceed its limit of 256 (measured: 257 entries in a contended run). They
+  now happen under one lock in `HauteurSession.recordGhostRevert`.
+- Real Y below the client floor (`javaMinY < clientMinY`) is now reported once per session at join, instead of
+  being silently unreachable.
+
 - A dropped destroy was recorded for the re-check after a switch only for the first eight distinct positions of
   that freeze. Later ones were not re-checked, so the client could keep showing a block the server still has, and
   nothing counted them.

@@ -64,7 +64,7 @@ public final class HauteurCommand {
             "§bHauteur §7client Y range: §f" + (w == null ? "?" : w.clientMinY() + ".." + (w.clientMinY() + w.clientHeight())),
             "§bHauteur §7real Y range: §f" + (w == null ? "?" : w.javaMinY() + ".." + w.javaMaxY()),
             "§bHauteur §7your real Y: §f" + currentRealY(session, state),
-            "§bHauteur §7cached chunks: §f" + state.chunkCache.size()
+            "§bHauteur §7cached chunks: §f" + state.chunkCache().size()
                 + (w != null && w.needed()
                     ? " §7| window height " + w.clientHeight() + " blocks, re-home ~1 per "
                       + Math.max(1, w.clientHeight() / 2 - 64) + " climbed blocks"

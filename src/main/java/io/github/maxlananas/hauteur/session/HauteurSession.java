@@ -7,6 +7,7 @@ import org.cloudburstmc.math.vector.Vector3i;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
@@ -127,12 +128,13 @@ public final class HauteurSession {
     private volatile long switchStartNanos;
 
     /** Original chunks plus journaled block changes, for replay during a window switch. Synchronized internally. */
-    public final ChunkCache chunkCache;
-    public final Set<Vector3i> ghostRevertPositions = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final ChunkCache chunkCache;
+    /** Dropped destroys to re-check after a freeze. Guarded by this: see {@link #recordGhostRevert}. */
+    private final Set<Vector3i> ghostRevertPositions = new LinkedHashSet<>();
     private final Deque<String> watchRing = new ArrayDeque<>(WATCH_RING_LIMIT);
 
     private volatile int playerJavaId = -1;
-    public final AtomicBoolean switchQueued = new AtomicBoolean();
+    private final AtomicBoolean switchQueued = new AtomicBoolean();
     /** True after attach exhausted its retries: the session runs untranslated; surfaced in info/doctor. */
     private volatile boolean degraded;
     /** Incremented on login/respawn; a switch or ghost queued before a world change must not act on the new world. */
@@ -330,6 +332,50 @@ public final class HauteurSession {
             add(Stat.CHUNK_EVICTED_BUDGET, total - budgetEvictionsCounted);
             budgetEvictionsCounted = total;
         }
+    }
+
+    /** The chunk cache. It synchronises itself; callers need no lock of their own. */
+    public ChunkCache chunkCache() {
+        return chunkCache;
+    }
+
+    /** The switch-queued latch: set by the first requester, cleared by the switch itself. */
+    public AtomicBoolean switchQueued() {
+        return switchQueued;
+    }
+
+    /** Outcome of {@link #recordGhostRevert}. */
+    public enum GhostRecord { RECORDED, DUPLICATE, FULL }
+
+    /**
+     * Records a dropped destroy for the re-check after the freeze. The duplicate test, the size test and the add
+     * happen under one lock: the outbound path (tick thread) and the drain (event loop) can race, and a separate
+     * check-then-add could exceed {@link #GHOST_REVERT_LIMIT}.
+     */
+    public synchronized GhostRecord recordGhostRevert(Vector3i position) {
+        if (ghostRevertPositions.contains(position)) {
+            return GhostRecord.DUPLICATE;
+        }
+        if (ghostRevertPositions.size() >= GHOST_REVERT_LIMIT) {
+            return GhostRecord.FULL;
+        }
+        ghostRevertPositions.add(position);
+        return GhostRecord.RECORDED;
+    }
+
+    /** Takes the recorded dropped destroys and empties the list, in one step. */
+    public synchronized List<Vector3i> takeGhostReverts() {
+        List<Vector3i> taken = new ArrayList<>(ghostRevertPositions);
+        ghostRevertPositions.clear();
+        return taken;
+    }
+
+    public synchronized void clearGhostReverts() {
+        ghostRevertPositions.clear();
+    }
+
+    public synchronized int ghostRevertCount() {
+        return ghostRevertPositions.size();
     }
 
     public HauteurSession(WindowConfigSource windowConfigSource, int maxChunks, long maxBytes) {

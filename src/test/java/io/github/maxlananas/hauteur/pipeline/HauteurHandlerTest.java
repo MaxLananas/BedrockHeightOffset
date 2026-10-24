@@ -291,7 +291,7 @@ class HauteurHandlerTest {
         for (int x = 0; x < dugs; x++) {
             rig.channel.writeOutbound(dig(x, DIG_Y, 0));
         }
-        assertEquals(HauteurSession.GHOST_REVERT_LIMIT, rig.state.ghostRevertPositions.size());
+        assertEquals(HauteurSession.GHOST_REVERT_LIMIT, rig.state.ghostRevertCount());
         assertEquals(44, rig.state.sinceReset(HauteurSession.Stat.GHOST_OVERFLOWS));
         // The same block dug again while the freeze lasts is one entry, not an overflow.
         rig.channel.writeOutbound(dig(0, DIG_Y, 0));
