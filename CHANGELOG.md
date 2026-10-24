@@ -38,6 +38,10 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
   that freeze. Later ones were not re-checked, so the client could keep showing a block the server still has, and
   nothing counted them.
   The limit is now 256 positions (about 16 KB, estimated), and anything beyond it is counted (`GHOST_OVERFLOWS`).
+- With a switch margin of half the window height minus 8 or more (for example 128 on a 256-high window), the window
+  re-homed at almost every section boundary: about 55 switches per 1000 blocks walked, with one-block reversals,
+  each one a frozen input and a chunk replay. The margin is now capped at half the window height minus 16. The
+  default (64) is unchanged. Measured by simulating the policy; not reproduced on a live client.
 - A player action that names no block (releasing the held item, swapping hands, stab, and a drop from the inventory)
   was shifted by the window offset and, during a switch, held and resolved as a block action. Geyser sends these with a
   zero position, which is not a block, so the action was dropped when neither frame was plausible. The consequence (a

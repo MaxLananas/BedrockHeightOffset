@@ -63,7 +63,7 @@ limit and the change is logged the same way. Most keys are reloaded with `/geyse
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Master switch. |
-| `switch-margin-blocks` | `64` | Re-home the window when the player is this close to its edge (32–256). |
+| `switch-margin-blocks` | `64` | Re-home the window when the player is this close to its edge (32–256). Capped at half the window height minus 16 (so 112 for a 256-high window): above the cap every section boundary would switch again. Values near the cap switch often. |
 | `switch-cooldown-ms` | `2000` | Minimum time between two switches for one player (250–60000). |
 | `freeze-ms` | `400` | Length of the freeze after a switch (100–5000). |
 | `freeze-hold-actions` | `true` | Hold block actions sent during a freeze and replay them when their frame is unambiguous. `false` drops them, with a block re-send for dropped digs. |

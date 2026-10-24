@@ -33,9 +33,11 @@ def target_offset(real_y, client_min_y, client_height, max_offset):
     return max(0, min(max_offset, snapped))
 
 def should_switch(real_y, current_offset, client_min_y, client_height, margin, max_offset):
+    # Mirrors WindowRules.shouldSwitch: the margin is capped so the post-switch band never reaches a trigger zone.
+    effective_margin = max(0, min(margin, client_height // 2 - SECTION))
     client_y = real_y - current_offset
-    near_top = client_y >= client_min_y + client_height - margin
-    near_bottom = current_offset > 0 and client_y <= client_min_y + margin
+    near_top = client_y >= client_min_y + client_height - effective_margin
+    near_bottom = current_offset > 0 and client_y <= client_min_y + effective_margin
     if not near_top and not near_bottom:
         return False
     return target_offset(real_y, client_min_y, client_height, max_offset) != current_offset
@@ -218,6 +220,25 @@ def property_switch_cadence():
                 offset = new
     assert switches <= 1, switches  # one switch at most, then hysteresis holds
 
+def property_no_flicker_at_any_margin():
+    """Mirrors WindowRulesTest.hoveringAcrossASectionBoundaryCausesAtMostOneSwitchAtAnyMargin: jittering a few
+    blocks across the point where the snapped target changes causes at most one switch, for every margin in the
+    configured range and every window height. Before the margin cap, a margin of H/2 - 8 or more flickered."""
+    for height in (256, 320, 512, 1024):
+        for c_min in (-512, 0):
+            centre = c_min + height // 2
+            for margin in range(0, 257, 8):
+                for t in range(0, 1025, SECTION):
+                    boundary = t + centre + 8
+                    offset = t
+                    switches = 0
+                    for i in range(40):
+                        real_y = boundary + 3 if i % 2 == 0 else boundary - 4
+                        if should_switch(real_y, offset, c_min, height, margin, 4096):
+                            offset = target_offset(real_y, c_min, height, 4096)
+                            switches += 1
+                    assert switches <= 1, (height, c_min, margin, t, switches)
+
 def property_fits_never_switches():
     for java_min, java_max, c_min, c_h in [
         (-64, 320, -64, 384), (-64, 320, -512, 1024), (0, 128, 0, 256),
@@ -343,7 +364,8 @@ def property_section_size_bounds():
 
 def main():
     rounds = int(sys.argv[1]) if len(sys.argv) > 1 else 1
-    props = [property_reachable_window, property_switch_cadence, property_fits_never_switches,
+    props = [property_reachable_window, property_switch_cadence, property_no_flicker_at_any_margin,
+             property_fits_never_switches,
              property_reslice_semantics, property_malformed_input_throws,
              property_tolerant_reslice_contract, property_reachable_top_formula,
              property_section_size_bounds]

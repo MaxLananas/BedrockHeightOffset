@@ -133,4 +133,56 @@ class WindowRulesTest {
         assertEquals(0, WindowRules.targetOffset(Double.NaN, C_MIN, C_H, MAX_OFF));
         assertEquals(0, WindowRules.targetOffset(Double.POSITIVE_INFINITY, C_MIN, C_H, MAX_OFF));
     }
+
+    @Test
+    void hoveringAcrossASectionBoundaryCausesAtMostOneSwitchAtAnyMargin() {
+        // The player jitters a few blocks either side of the point where the snapped target changes. Once the
+        // window has moved, the client must not be pushed back by the opposite edge: at most one switch is allowed.
+        for (int height : new int[] {256, 320, 512, 1024}) {
+            for (int clientMin : new int[] {-512, 0}) {
+                int centre = clientMin + height / 2;
+                for (int margin = 0; margin <= 256; margin += 8) {
+                    for (int t = 0; t <= 1024; t += 16) {
+                        int boundary = t + centre + 8; // target flips from t to t + 16 here
+                        int offset = t;
+                        int switches = 0;
+                        for (int i = 0; i < 40; i++) {
+                            int realY = (i % 2 == 0) ? boundary + 3 : boundary - 4;
+                            if (WindowRules.shouldSwitch(realY, offset, clientMin, height, margin, 4096)) {
+                                offset = WindowRules.targetOffset(realY, clientMin, height, 4096);
+                                switches++;
+                            }
+                        }
+                        assertTrue(switches <= 1, "flicker: " + switches + " switches at height=" + height
+                            + " clientMin=" + clientMin + " margin=" + margin + " boundary=" + boundary);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    void randomWalkInSmallWindowAtMaximumMarginDoesNotThrash() {
+        // Regression: a 256-high window with margin 128 switched at almost every section boundary (~55 per 1000 blocks).
+        java.util.Random rnd = new java.util.Random(7);
+        int clientMin = 0;
+        int height = 256;
+        int maxOffset = WindowRules.maxUsefulOffset(2032, clientMin, height);
+        int y = 1000;
+        int offset = WindowRules.targetOffset(y, clientMin, height, maxOffset);
+        long walked = 0;
+        int switches = 0;
+        for (int step = 0; step < 200_000; step++) {
+            int move = rnd.nextInt(3) - 1;
+            y = Math.max(clientMin, Math.min(2031, y + move));
+            walked += Math.abs(move);
+            if (WindowRules.shouldSwitch(y, offset, clientMin, height, 256, maxOffset)) {
+                offset = WindowRules.targetOffset(y, clientMin, height, maxOffset);
+                switches++;
+            }
+        }
+        assertTrue(walked > 0);
+        assertTrue(switches * 1000L <= walked * 5L,
+            "thrashing: " + switches + " switches over " + walked + " blocks walked");
+    }
 }
