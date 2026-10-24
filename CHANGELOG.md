@@ -34,6 +34,11 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 
 ### Fixed
 
+- A player action that names no block (dropping an item, releasing the held item, swapping hands, stab) was shifted
+  by the window offset and, during a switch, held and resolved as a block action. Its zero position is not a block, so
+  the action was dropped when neither frame was plausible. The consequence (a released bow or food left in use on the
+  server) follows from the code and was not reproduced on a live server.
+  These actions are now sent unchanged and never held. Digging still names a block and is shifted and held as before.
 - The chunk cache evicted the oldest chunks to fit its budget without any record. Those chunks were then missing after a
   window switch, with no counter to explain it. Budget evictions are now counted (`CHUNK_EVICTED_BUDGET`, shown by
   `/hauteur stats`), and the README states the eviction rule.

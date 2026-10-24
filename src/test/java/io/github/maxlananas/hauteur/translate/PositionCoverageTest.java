@@ -51,6 +51,29 @@ class PositionCoverageTest {
     }
 
     @Test
+    void nonDiggingPlayerActionsCarryNoBlockAndAreNeitherShiftedNorHeld() {
+        // Geyser sends these with Vector3i.ZERO. The zero is not a block: it must not be shifted, held, or
+        // resolved by plausibility, or a release held across a switch would be dropped.
+        for (PlayerAction action : new PlayerAction[] {PlayerAction.RELEASE_USE_ITEM, PlayerAction.DROP_ITEM,
+            PlayerAction.DROP_ITEM_STACK, PlayerAction.SWAP_HANDS, PlayerAction.STAB}) {
+            var packet = new ServerboundPlayerActionPacket(action, Vector3i.ZERO, Direction.DOWN, 3);
+            assertEquals(OutboundYTransforms.FrozenDisposition.TRANSMIT,
+                OutboundYTransforms.frozenDisposition(packet), action.name());
+            assertNull(OutboundYTransforms.blockPosition(packet), action.name());
+            assertSame(packet, OutboundYTransforms.apply(packet, 1000, CommandYRewrite.Config.DISABLED), action.name());
+        }
+    }
+
+    @Test
+    void diggingStillNamesABlockAndIsShifted() {
+        var dig = new ServerboundPlayerActionPacket(PlayerAction.FINISH_DIGGING, Vector3i.from(1, 600, 1), Direction.UP, 0);
+        assertEquals(OutboundYTransforms.FrozenDisposition.HOLD_BLOCK_ACTION, OutboundYTransforms.frozenDisposition(dig));
+        assertEquals(Vector3i.from(1, 600, 1), OutboundYTransforms.blockPosition(dig));
+        var shifted = (ServerboundPlayerActionPacket) OutboundYTransforms.apply(dig, 1000, CommandYRewrite.Config.DISABLED);
+        assertEquals(1600, shifted.getPosition().getY());
+    }
+
+    @Test
     void packetsWithoutAbsoluteYPassThroughFreeze() {
         assertEquals(OutboundYTransforms.FrozenDisposition.TRANSMIT,
             OutboundYTransforms.frozenDisposition(new ServerboundAcceptTeleportationPacket(7)));

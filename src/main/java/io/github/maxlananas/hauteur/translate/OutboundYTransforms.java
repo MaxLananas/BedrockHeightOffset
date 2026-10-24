@@ -50,12 +50,28 @@ public final class OutboundYTransforms {
         DROP
     }
 
+    /**
+     * Whether a player action names a block. Only the digging actions do. Geyser sends the others (dropping an
+     * item, releasing the held item, swapping hands, stab) with a zero position. That zero is not a block, so
+     * shifting it, holding it, or resolving it by plausibility would corrupt the packet or drop it.
+     */
+    private static boolean namesBlock(ServerboundPlayerActionPacket p) {
+        return switch (p.getAction()) {
+            case START_DIGGING, CANCEL_DIGGING, FINISH_DIGGING -> true;
+            default -> false;
+        };
+    }
+
     /** Classifies an outbound packet for the freeze window. Pure: depends only on the packet type and fields. */
     public static FrozenDisposition frozenDisposition(Object packet) {
         if (packet instanceof ServerboundMovePlayerPosPacket
             || packet instanceof ServerboundMovePlayerPosRotPacket
             || packet instanceof ServerboundMoveVehiclePacket) {
             return FrozenDisposition.HOLD_MOVEMENT;
+        }
+        if (packet instanceof ServerboundPlayerActionPacket p && !namesBlock(p)) {
+            // Carries no absolute Y: frame-independent, like a rotation.
+            return FrozenDisposition.TRANSMIT;
         }
         if (packet instanceof ServerboundPlayerActionPacket
             || packet instanceof ServerboundUseItemOnPacket
@@ -90,7 +106,7 @@ public final class OutboundYTransforms {
      */
     public static Vector3i blockPosition(Object packet) {
         if (packet instanceof ServerboundPlayerActionPacket p) {
-            return p.getPosition();
+            return namesBlock(p) ? p.getPosition() : null;
         }
         if (packet instanceof ServerboundUseItemOnPacket p) {
             return p.getPosition();
@@ -154,7 +170,7 @@ public final class OutboundYTransforms {
         if (packet instanceof ServerboundMovePlayerPosRotPacket p) {
             return p.withY(p.getY() + offset);
         }
-        if (packet instanceof ServerboundPlayerActionPacket p) {
+        if (packet instanceof ServerboundPlayerActionPacket p && namesBlock(p)) {
             return p.withPosition(shift(p.getPosition(), offset));
         }
         if (packet instanceof ServerboundUseItemOnPacket p) {

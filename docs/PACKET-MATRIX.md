@@ -40,7 +40,7 @@ snapshot Geyser depends on). Re-audit on every Geyser bump, following [CONTRIBUT
 | `ServerboundMovePlayerPosPacket`, `ServerboundMovePlayerPosRotPacket` | y | A (`y + O`); switch evaluation | Hold (`freeze-hold-movement`) |
 | `ServerboundMovePlayerRotPacket`, `ServerboundMovePlayerStatusOnlyPacket` | - | - | Transmit |
 | `ServerboundMoveVehiclePacket` | position | A | Hold (movement) |
-| `ServerboundPlayerActionPacket` | position | A | Hold (`freeze-hold-actions`); dropped digs are re-sent |
+| `ServerboundPlayerActionPacket` | position (digging actions only) | A for `START/CANCEL/FINISH_DIGGING`; other actions carry a zero position and are untouched | Digging: hold (`freeze-hold-actions`); dropped digs are re-sent. Other actions: transmit |
 | `ServerboundUseItemOnPacket` | position | A (cursor and face are R) | Hold (`freeze-hold-actions`) |
 | `ServerboundPickItemFromBlockPacket` | pos | A | Hold |
 | `ServerboundSignUpdatePacket` | position | A | Hold |
