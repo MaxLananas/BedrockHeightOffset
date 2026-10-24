@@ -5,3 +5,5 @@
 *.xml text eol=lf
 *.py text eol=lf
 *.jar binary
+*.properties text eol=lf
+*.sh text eol=lf

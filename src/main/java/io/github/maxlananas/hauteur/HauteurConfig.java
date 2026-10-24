@@ -1,0 +1,239 @@
+package io.github.maxlananas.hauteur;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Properties;
+import java.util.Set;
+import java.util.regex.Pattern;
+
+/**
+ * Extension configuration, loaded from {@code <extensions data>/hauteur/config.properties}.
+ * Properties (not YAML) because the only YAML implementation visible at extension runtime is Geyser's
+ * relocated copy, which an extension must not import; see README "Configuration".
+ */
+public final class HauteurConfig {
+    /** Default for {@code rewrite-commands}; the field initializer and the loader both read this constant. */
+    private static final String DEFAULT_REWRITE_COMMANDS = "tp,tppos,teleport";
+
+    /** Every key the loader understands. Anything else in the file is reported as unknown. */
+    private static final Set<String> KNOWN_KEYS = Set.of(
+        "enabled", "switch-margin-blocks", "switch-cooldown-ms", "freeze-ms",
+        "freeze-hold-actions", "freeze-hold-movement", "announce-switches",
+        "chunk-cache-max-chunks", "chunk-cache-max-megabytes", "max-offset-blocks",
+        "rewrite-commands", "log-switches");
+
+    public boolean enabled = true;
+    /** Switch when player feet reach within this many blocks of the window edge. Min 32. */
+    public int switchMarginBlocks = 64;
+    /** Minimum time between two window switches for the same player. */
+    public long switchCooldownMs = 2000;
+    /** How long outbound player position packets are held while the client snaps to the new window. */
+    public long freezeMs = 400;
+    /** Hold & replay block interactions sent during a switch instead of dropping them. */
+    public boolean freezeHoldActions = true;
+    /** Movement sent during a freeze is held and replayed in its original frame instead of dropped (elytra/boats). */
+    public boolean freezeHoldMovement = true;
+    /** Tell the player, in chat, when their height window was re-homed (transparency over the snap). */
+    public boolean announceSwitches = false;
+    public int chunkCacheMaxChunks = 2048;
+    public int chunkCacheMaxMegabytes = 96;
+    /** 0 = derive from the dimension; set to force a lower cap (safety valve). */
+    public int maxOffsetBlocks = 0;
+    /** Chat commands whose absolute Y is rewritten. Empty string disables rewriting. */
+    public Set<String> rewriteCommands = parseCommandList(DEFAULT_REWRITE_COMMANDS, new ArrayList<>());
+    /** Log one line per window switch (they are rare by construction). */
+    public boolean logSwitches = true;
+    /** Parse-time findings (invalid values, unknown keys); logged by the core, never fatal. */
+    public List<String> warnings = List.of();
+
+    private HauteurConfig() {
+    }
+
+    public static HauteurConfig loadDefault() {
+        return new HauteurConfig();
+    }
+
+    public static HauteurConfig load(Path file) throws IOException {
+        HauteurConfig config = new HauteurConfig();
+        Properties props = new Properties();
+        try (InputStream in = Files.newInputStream(file)) {
+            props.load(in);
+        } catch (IllegalArgumentException e) {
+            // Properties.load throws this for a malformed unicode escape. That is a bad file, not a programming
+            // error: report it as an I/O failure so the core falls back to defaults instead of failing to start.
+            throw new IOException("malformed configuration " + file + ": " + e.getMessage(), e);
+        }
+        List<String> warnings = new ArrayList<>();
+        warnUnknownKeys(props, warnings);
+        config.enabled = bool(props, "enabled", config.enabled, warnings);
+        config.switchMarginBlocks = clampInt("switch-margin-blocks",
+            integer(props, "switch-margin-blocks", config.switchMarginBlocks, warnings), 32, 256, warnings);
+        config.switchCooldownMs = clampLong("switch-cooldown-ms",
+            longVal(props, "switch-cooldown-ms", config.switchCooldownMs, warnings), 250L, 60_000L, warnings);
+        config.freezeMs = clampLong("freeze-ms",
+            longVal(props, "freeze-ms", config.freezeMs, warnings), 100L, 5_000L, warnings);
+        config.freezeHoldActions = bool(props, "freeze-hold-actions", config.freezeHoldActions, warnings);
+        config.freezeHoldMovement = bool(props, "freeze-hold-movement", config.freezeHoldMovement, warnings);
+        config.announceSwitches = bool(props, "announce-switches", config.announceSwitches, warnings);
+        config.chunkCacheMaxChunks = clampInt("chunk-cache-max-chunks",
+            integer(props, "chunk-cache-max-chunks", config.chunkCacheMaxChunks, warnings), 64, 32_768, warnings);
+        config.chunkCacheMaxMegabytes = clampInt("chunk-cache-max-megabytes",
+            integer(props, "chunk-cache-max-megabytes", config.chunkCacheMaxMegabytes, warnings), 8, 1_024, warnings);
+        config.maxOffsetBlocks = alignSection("max-offset-blocks",
+            integer(props, "max-offset-blocks", config.maxOffsetBlocks, warnings), warnings);
+        config.rewriteCommands = parseCommandList(props.getProperty("rewrite-commands", DEFAULT_REWRITE_COMMANDS),
+            warnings);
+        config.logSwitches = bool(props, "log-switches", config.logSwitches, warnings);
+        config.warnings = List.copyOf(warnings);
+        return config;
+    }
+
+    public static String sampleFileContents() {
+        return """
+            # Hauteur configuration
+            enabled=true
+            # Switch the height window when the player gets within this many blocks
+            # of the top/bottom edge of the client-visible range (clamped to 32..256).
+            switch-margin-blocks=64
+            # Debounce for window switches, in milliseconds (clamped to 250..60000).
+            switch-cooldown-ms=2000
+            # Outbound movement is held for this long after a switch so the client
+            # can be snapped to the new window without fighting stale positions (clamped to 100..5000).
+            freeze-ms=400
+            # Block interactions (dig/place) sent during a freeze are queued and replayed
+            # afterwards (translated for the frame the client was in) instead of dropped.
+            freeze-hold-actions=true
+            # Movement sent during a freeze is likewise held and replayed in the frame it was sent
+            # in (prevents elytra/boat/fall progress from being discarded at every switch).
+            freeze-hold-movement=true
+            # Tell players in chat when their height window is re-homed (~1 per few hundred blocks).
+            announce-switches=false
+            # Original chunks kept (per player) for replaying during a switch.
+            chunk-cache-max-chunks=2048
+            chunk-cache-max-megabytes=96
+            # 0 = automatically cap the offset so the world top stays reachable.
+            max-offset-blocks=0
+            # Chat commands whose absolute Y coordinate is rewritten into real space. Names without the slash.
+            # Leave empty to disable. Only unsigned commands are ever modified.
+            rewrite-commands=tp,tppos,teleport
+            log-switches=true
+            """;
+    }
+
+    /** A command name: lower-case letters, digits, '_' and '-'. */
+    private static final Pattern COMMAND_NAME = Pattern.compile("[a-z0-9_-]+");
+
+    /**
+     * Comma-separated command names: trimmed, lower-cased, a leading slash removed, empty entries dropped. An
+     * entry that is not a plain command name is reported and ignored. Without this, {@code /tp} was kept with its
+     * slash, never matched a message, and the rewrite was silently off.
+     */
+    private static Set<String> parseCommandList(String raw, List<String> warnings) {
+        Set<String> out = new HashSet<>();
+        for (String part : raw.split(",")) {
+            String trimmed = part.trim();
+            String name = trimmed.toLowerCase(Locale.ROOT);
+            if (name.startsWith("/")) {
+                name = name.substring(1);
+            }
+            if (name.isEmpty()) {
+                continue;
+            }
+            if (COMMAND_NAME.matcher(name).matches()) {
+                out.add(name);
+            } else {
+                warnings.add("'rewrite-commands' entry '" + trimmed + "' is not a command name (ignored)");
+            }
+        }
+        return Set.copyOf(out);
+    }
+
+    /**
+     * Clamps a value into its range. A changed value keeps working, but it is reported, so an operator who wrote
+     * 9999 sees in the log that 256 is in use.
+     */
+    private static int clampInt(String key, int value, int min, int max, List<String> warnings) {
+        int clamped = Math.min(max, Math.max(min, value));
+        if (clamped != value) {
+            warnings.add("'" + key + "' is " + value + ", outside " + min + ".." + max + "; using " + clamped);
+        }
+        return clamped;
+    }
+
+    private static long clampLong(String key, long value, long min, long max, List<String> warnings) {
+        long clamped = Math.min(max, Math.max(min, value));
+        if (clamped != value) {
+            warnings.add("'" + key + "' is " + value + ", outside " + min + ".." + max + "; using " + clamped);
+        }
+        return clamped;
+    }
+
+    /** Rounds down to a whole section (16 blocks) and never below zero; a changed value is reported. */
+    private static int alignSection(String key, int blocks, List<String> warnings) {
+        int aligned = Math.max(0, blocks / 16 * 16);
+        if (aligned != blocks) {
+            warnings.add("'" + key + "' is " + blocks + "; using " + aligned + " (a non-negative multiple of 16)");
+        }
+        return aligned;
+    }
+
+    /**
+     * Strict boolean: only {@code true} and {@code false} (case-insensitive) are accepted. Anything else keeps the
+     * default and is reported, instead of silently becoming {@code false}.
+     */
+    private static boolean bool(Properties props, String key, boolean def, List<String> warnings) {
+        String raw = props.getProperty(key);
+        if (raw == null) {
+            return def;
+        }
+        String v = raw.trim().toLowerCase(Locale.ROOT);
+        if (v.equals("true")) {
+            return true;
+        }
+        if (v.equals("false")) {
+            return false;
+        }
+        warnings.add("invalid boolean for '" + key + "': '" + raw + "' (expected true or false; using " + def + ")");
+        return def;
+    }
+
+    private static int integer(Properties props, String key, int def, List<String> warnings) {
+        String raw = props.getProperty(key);
+        if (raw == null) {
+            return def;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            warnings.add("invalid value for '" + key + "': '" + raw + "' (using " + def + ")");
+            return def;
+        }
+    }
+
+    private static void warnUnknownKeys(Properties props, List<String> warnings) {
+        for (String key : props.stringPropertyNames()) {
+            if (!KNOWN_KEYS.contains(key)) {
+                warnings.add("unknown config key '" + key + "' (ignored; see the sample file for valid keys)");
+            }
+        }
+    }
+
+    private static long longVal(Properties props, String key, long def, List<String> warnings) {
+        String raw = props.getProperty(key);
+        if (raw == null) {
+            return def;
+        }
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            warnings.add("invalid value for '" + key + "': '" + raw + "' (using " + def + ")");
+            return def;
+        }
+    }
+}

@@ -1,59 +1,123 @@
 name: release
 
-# Publishing is tag-driven: create a tag vX.Y.Z (annotated) on the commit to ship.
+# Publishing is tag-driven: push an annotated tag vX.Y.Z that points at a commit reachable from main.
+# The build job never holds write permissions; only the publish job can write to the release.
 on:
   push:
     tags:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GEYSER_VERSION: ${{ vars.GEYSER_VERSION || '2.11.2-SNAPSHOT' }}
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # needed to prove the tagged commit is on main
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: 21
           cache: maven
-      - name: Build
+      - name: Tag must match the Maven version, a changelog section, and be on main
+        run: |
+          set -euo pipefail
+          python3 dev/release/check_release.py "$GITHUB_REF_NAME" --notes release-notes.md
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::tag $GITHUB_REF_NAME does not point at a commit on main"; exit 1; }
+      - name: Build and test against Geyser ${{ env.GEYSER_VERSION }}
         run: |
           set +e
-          mvn -B -ntp -Dmaven.repo.local=$RUNNER_TEMP/m2 \
-              -Dgeyser.version=${{ vars.GEYSER_VERSION || '2.11.2-SNAPSHOT' }} \
-              verify 2>&1 | tee mvn.log
+          if [[ "$GEYSER_VERSION" == *-SNAPSHOT ]]; then
+            echo "::warning::release built against the Geyser snapshot $GEYSER_VERSION; it is not reproducible from Geyser's side"
+          fi
+          # Pin jar entry timestamps to the tagged commit so the same tag always yields the same bytes.
+          STAMP="$(date -u -d "@$(git log -1 --format=%ct "$GITHUB_SHA")" +%Y-%m-%dT%H:%M:%SZ)"
+          ./mvnw -B -ntp \
+              -Dgeyser.version="$GEYSER_VERSION" \
+              -Dproject.build.outputTimestamp="$STAMP" verify 2>&1 | tee mvn.log
           ec=${PIPESTATUS[0]}
-          if [ $ec -ne 0 ]; then
+          if [ "$ec" -ne 0 ]; then
             grep -E "\[ERROR\]" mvn.log | head -50 | while IFS= read -r line; do
               printf '::error::%s\n' "$(printf '%s' "$line" | tr -d '\r' | sed 's/%/%25/g')"
             done
           fi
-          exit $ec
-      - name: Release
+          exit "$ec"
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          # Exactly one candidate: a second jar (sources, a classifier) must fail the release, not be picked at random.
+          mapfile -t JARS < <(find target -maxdepth 1 -name 'hauteur-*.jar' ! -name 'original-*')
+          if [ "${#JARS[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one hauteur jar in target/, found ${#JARS[@]}"
+            exit 1
+          fi
+          JAR="${JARS[0]}"
+          ( cd target && sha256sum "$(basename "$JAR")" > SHA256SUMS.txt )
+          cp "$JAR" .
+          cp target/SHA256SUMS.txt .
+          sha256sum -c SHA256SUMS.txt
+          {
+            echo "tag: $GITHUB_REF_NAME"
+            echo "commit: $GITHUB_SHA"
+            echo "geyser: $GEYSER_VERSION"
+            echo "java: $(java -version 2>&1 | head -1)"
+            echo "maven: $(./mvnw -v | head -1)"
+          } > build-info.txt
+      - name: Upload release candidate
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-candidate
+          path: |
+            hauteur-*.jar
+            SHA256SUMS.txt
+            build-info.txt
+            release-notes.md
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-candidate
+      - name: Publish, or verify an existing identical release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
-          set -uo pipefail
-          JAR="$(find target -maxdepth 1 -name 'skywindow-*.jar' ! -name 'original-*' -print -quit)"
-          if [ -z "${JAR}" ]; then echo "no built jar found" >&2; exit 1; fi
-          echo "publishing: ${JAR} ($(du -h "${JAR}" | cut -f1))"
-          # SHA256SUMS.txt lists the bare jar name (what users verify against), not the target/ path.
-          ( cd target && sha256sum "$(basename "${JAR}")" > SHA256SUMS.txt ) || exit 1
-          # Idempotent republish: if the release already exists (rerun of a failed-after-create run),
-          # clobber its assets instead of erroring on "release already exists".
-          if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "release ${TAG} already exists - refreshing assets"
-            gh release upload "${TAG}" --clobber --repo "${{ github.repository }}" \
-              "${JAR}" target/SHA256SUMS.txt || exit 1
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            # Releases are immutable: identical artifacts are a no-op, anything else is a hard failure.
+            mkdir -p existing
+            gh release download "$TAG" --repo "$REPO" --dir existing --pattern SHA256SUMS.txt
+            if cmp -s existing/SHA256SUMS.txt SHA256SUMS.txt; then
+              echo "release $TAG already published with identical artifacts"
+            else
+              echo "::error::release $TAG exists with different artifacts; refusing to overwrite"
+              exit 1
+            fi
           else
-            gh release create "${TAG}" --verify-tag \
-              --title "SkyWindow ${TAG}" \
-              --notes "Geyser extension: windowed height support for Bedrock players (see README for guarantees and limits). Verify with: sha256sum -c SHA256SUMS.txt" \
-              "${JAR}" target/SHA256SUMS.txt || exit 1
+            gh release create "$TAG" --repo "$REPO" --verify-tag \
+              --title "Hauteur $TAG" --notes-file release-notes.md \
+              hauteur-*.jar SHA256SUMS.txt build-info.txt
           fi
-          gh release view "${TAG}" --repo "${{ github.repository }}" \
-            --json assets --jq '.assets[].name'
+          gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name'

@@ -1,6 +1,6 @@
-id: skywindow
-name: SkyWindow
-main: fr.buildtheearth.skywindow.SkyWindowExtension
+id: hauteur
+name: Hauteur
+main: io.github.maxlananas.hauteur.HauteurExtension
 api: 2.11.0
 version: ${project.version}
-authors: [BuildTheEarth]
+authors: [MaxLananas]

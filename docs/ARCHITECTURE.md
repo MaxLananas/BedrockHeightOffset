@@ -1,159 +1,219 @@
 # Architecture
 
-Deep-dive companion to the README's "How SkyWindow works" section. Written against the exact upstream
-sources pinned during the rewrite (Geyser master @ 9b65a39 + mcprotocollib master @ f0e959a, which
-is the shading inside Geyser-Spigot 2.11.2-SNAPSHOT); the numbers below refer to that code.
+This document describes what the code does and which guarantees it provides. Each claim names the code
+that implements it or the test that checks it.
 
-## The coordinate chain, end to end
+## Model
+
+Per player, one integer: the offset `O`, a non-negative multiple of 16 with `O <= Omax`.
 
 ```
- join/teleport/move/build/raycast/ride/sign/pick
- Java server                     Geyser core                      Bedrock client
- ───────────                     ──────────                       ──────────────
- send real coords   ──decode──►  [codec]   ┌─────────────┐  ──consume──►  translators build bedrock
- (window-agnostic)               [bho-win] │ -O absolute │  packets from the ALREADY-windowed view
-                                           │ +0 relative │              ▲
-                            bedrock client │           ▼ │              │ bedrock packets never
- ◄──encode──  accept/place/dig ──[manager]─┤ re-homed  ├─◄────────────┘ │ rewritten by SkyWindow
- server applies real coords   ──► [codec]  │ chunks +  │                 │
-                                  [bho-win] │ BE list + │                 │
-                                  (same)    │ +O absol. │                 │
-                                            └───────────┘
+clientY = realY - O      (Bedrock client and Geyser's translators)
+realY   = clientY + O    (Java server)
 ```
 
-The `[bho-win]` handler is the only component that owns offsets. Geyser's translators, its world
-cache (`ChunkCache`, `BlockCache`), the block-break flow, container holders and collision manager
-all receive and produce one single, self-consistent coordinate frame: the client's window frame.
+- Only absolute Y is translated. X and Z are never changed. Relative quantities (motion, velocities, cursor
+  offsets, `MoveEntityPos` deltas, relative teleport components) are never changed.
+- `Omax = floor16(javaMaxY - clientMinY - clientHeight)`. A larger offset would push the top of the world below
+  the client floor without making anything reachable.
+- The target offset centres the player in the window: `O* = snap16(clamp(realY - center, 0, Omax))`.
+  Implemented in `window/WindowRules`, mirrored in `dev/verify/oracle.py`.
+- `O >= 0` by design, so a real Y below the client floor (`javaMinY < clientMinY`) cannot be shown at any offset.
+  That bottom slice stays unreachable for the player. `HauteurCore` logs it once per session at join.
+- If the real dimension fits the client window, `WindowConfig.needed` is false and the pipeline does nothing
+  except watch login and respawn.
 
-## Why that placement is the right one (audit conclusions)
+## Pipeline position
 
-- **Geyser's correction engines are correct-by-assumption.** `CollisionManager` samples the
-  platform `WorldManager` with the coordinates the client currently uses; `BlockInventoryHolder`
-  re-reads the container block the same way; the break-handling code path (`BlockBreakHandler`) is
-  wire/cache-driven. The old architecture attacked the *symptoms* on the Bedrock wire; the audit
-  showed the *inputs* to these readers are the world Geyser is guaranteed to consult — so SkyWindow
-  shifts those inputs instead, via a session-aware `WorldManager` decorator. After that, no component
-  sees mixed frames, and no corrections are produced, because there is nothing to correct.
-- **Chunk coherence is index arithmetic, not patching.** Geyser's
-  `JavaLevelChunkWithLightTranslator` maps Java payload slot `w` → bedrock subchunk
-  `w + (javaMinSection − clientMinSection)` and ignores heightmaps/light; block-entity lookups
-  index `javaChunks[(y >> 4) − javaMinSection]`. Moving content to `w = r − Δs` and shifting BE
-  `y` by −O lands every consumer (sections, BEs, chunk cache, prediction) in exactly one coherent
-  frame — verified numerically in tests, including the array-bounds edge the BE prune protects.
-- **Bedrock wire surgery is structurally wrong.** Rewriting bedrock `UpdateBlock`/`AddActor`
-  coordinates means *two* translation layers with independent notions of the offset. The
-  "block placed then vanished" reports map to exactly that (client-authority reverts + Geyser cache
-  writes keyed by mismatched coords).
-- **One packet, one transform, per direction.** Determinism & reversibility are local properties
-  checkable in tests (`apply(x, O)` then inverse is the identity — integer Y).
+```
+Java server  <->  [codec] -> [hauteur: HauteurHandler] -> [manager] -> Geyser translators -> Bedrock
+```
+
+The handler sits directly after mcprotocollib's `codec` and before Geyser's `manager`. Inbound packets reach it
+decoded in real space. Outbound packets reach it before serialization, in client space. The handler is the
+only place where absolute Y is translated for the session.
+
+The handler does not depend on Geyser types. It reads the session through `pipeline/PlayerSession`, the
+configuration through `pipeline/PipelineSettings` (implemented by `HauteurCore`), and reports through
+`pipeline/Diagnostics`. Production adapters are `session/GeyserPlayerSession` and `pipeline/GeyserDiagnostics`.
+That seam is what lets `HauteurHandlerTest` run the real pipeline without a Geyser runtime.
+
+Writes that Geyser makes on the Java side pass through the handler too. Packets the handler injects go to
+Geyser with `managerContext.fireChannelRead`, so they are not translated again.
 
 ## Threading
 
-- `channelRead` runs on the downstream channel's event loop (mcprotocollib dispatches onto
-  `GeyserSession`'s single-threaded `tickEventLoop` *after* this handler, so Geyser-side consumption
-  stays on its normal loop; we are strictly upstream of that hop).
-- `write` runs on the calling thread of `DownstreamSession#sendPacket` (normally the tick loop).
-  The outbound path therefore treats `state.offset`/`frozen`/`window` as read-only volatiles and
-  never mutates; the switch (and all cache state) is executed with
-  `channel.eventLoop().execute(...)` — inlined directly when already on that loop (inbound-triggered
-  switches are inline, so the very packet that triggered a switch is translated with the new offset
-  in the same read).
-- The switch itself is one atomic EL task; between flip and re-reads there is no interleaving point,
-  because translation also runs on that loop. The volatile `offset` write is ordered-before the
-  event-loop enqueue for other threads, and any packet translated with a *stale* frame still maps to
-  the same real coordinate the sender currently uses (`realY = clientY + O`), which is the exact
-  property that keeps a switch race benign instead of catastrophic.
-- Commands (`/skywindow …`) read volatiles + a synchronized snapshot of the (opt-in) watch ring;
-  a command that mutates (`/skywindow window <realY>`) is bounced to the session's event loop via
-  the pipeline handler, never executed on the command thread.
-- A single sweeper on `GeyserImpl.getInstance().getScheduler()` (60 s period) is the only other
-  thread touching state: it reclaims per-session state for closed sessions when Geyser's disconnect
-  event did not fire (proxy hiccups, half-open connections), resetting the chunk cache - the one
-  place outside the event loop that touches a `SkyWindowSession`, and only for sessions no longer
-  attached (it removes them from the registry rather than mutating a live one).
-- The held-packet queue (`HeldQueue`) is the one structure crossing threads *while live*: `write()`
-  can run on the tick loop, the drain runs on the event loop. It is a lock-free bounded FIFO
-  (`ConcurrentLinkedQueue` + advisory size cap); on abandoned replays every pending netty promise
-  is completed successfully rather than failed, so Geyser write futures can never hang on a dropped
-  queue.
+| Context | What runs | Shared state |
+|---|---|---|
+| Channel event loop | Inbound, window switches, freeze end, flush of held packets | The transition state of `HauteurSession` is written here, through its setters. |
+| Geyser tick thread (or any thread) | Outbound `write` | Holds `freezeLock`, so it cannot interleave with a switch or a flush. Reads volatile fields. |
+| Session and reload threads | Disconnect, reload, sweeper | `ChunkCache` is synchronized, so `clear` and `resize` are safe. |
 
-## The switch and freeze protocol
+Every freeze transition and every outbound write runs under `freezeLock`. The unfreeze flush therefore cannot be
+overtaken by a later packet. Lock hold times are short: the lock is not held while waiting for I/O, and writes
+from other threads are queued by Netty rather than executed inline.
 
-A window switch is a single event-loop task (`performSwitch`), in this order:
+`HeldQueue` is still lock-free because it is also used as a plain FIFO. It is not the ordering guarantee; the
+lock is.
 
-1. `frozen = true`, remember `frozenFrameOffset = previous offset`, install `offset = target`.
-   From this microsecond, inbound translation uses the new offset and outbound position packets
-   are held.
-2. Backoff bookkeeping: switches arriving within 4x the cooldown double `switchBackoff` (cap 8),
-   the effective cooldown being `switch-cooldown-ms * max(1, backoff)`; a quiet period resets it to
-   1. This makes oscillation near a margin pathological-input-bounded rather than CPU-bounded.
-3. `held.clearAndComplete()` is *not* called here - held packets survive the whole freeze;
-   the queued chunk replays follow: every cached chunk in range is re-derived from pristine
-   originals at the new offset and sent first, so the snap lands on already-correct terrain.
-4. The client is snapped: a synthetic `MovePlayerPos`-equivalent teleport with the player's real
-   position projected into the new window (the `lastPlayerTeleport` snapshot path).
-5. `freezeMs` later, on the same event loop, `unfreeze` runs:
-   `frozen = false` → destroy-ghost reverts (block updates that were dropped while frozen are
-   re-sent once so the client resyncs authoritatively) → flush the held queue: each held packet is
-   replayed only when its frame hypothesis holds (a held dig/place whose position translates
-   identically under `frozenFrameOffset`, the current offset, or is out of interaction reach - then
-   it is dropped deliberately and counted); movement packets are replayed with the offset they were
-   captured under, preserving fall/elytra continuity.
-   Both steps are skipped wholesale if `worldGeneration` changed during the freeze (respawn/dimension
-   switch mid-switch): the ghosts and held writes refer to a world that no longer exists.
-6. Scheduling the unfreeze *fails* (loop shutting down) → unfreeze is executed inline before
-   returning; the freeze cannot outlive its own switch.
+## Window switch
 
-Invariants: the freeze is only ever entered by the task that flips `offset`; nothing else writes
-`offset`; `frozen` has exactly one writer at a time per session, so a packet read by `write()` can
-observe (frozen, offset) pairs that are all states this protocol itself passed through - the
-benign-race property from the Threading section. Timings are kept in nanoseconds (last freeze and
-running totals) and surfaced by `stats`/`doctor` in microseconds - a freeze that drifts far past
-`freeze-ms` is a bug visible in one command.
+`HauteurHandler.performSwitch(realY, injectSnap, generation)`, under `freezeLock`:
 
-## The chunk cache
+1. Compute the target offset. Return if it equals the current offset, the world generation changed, or the
+   pipeline is not active.
+2. Increment `freezeEpoch`, set `frozen`, record the previous offset as `frozenFrameOffset`, flip `offset`,
+   set the anchor `lastSeenRealY = realY`, record the start time.
+3. Replay the cached chunks, nearest first. Each chunk is windowed in the new frame and followed by its
+   journaled block and block-entity changes that fall inside the visible window.
+4. For switches not caused by a server teleport, snap the client with a `ClientboundTeleportEntityPacket` for
+   the player's id. Geyser maps that to a `TELEPORT` MovePlayer for the Bedrock client.
+5. Schedule `unfreeze(epoch)` after `freeze-ms`. A stale epoch does nothing.
 
-Original `ClientboundLevelChunkWithLight` packets are retained untouched per session, evicted by
-LRU under the configured chunk and byte caps. Replay derives windowed copies on demand (never
-"windowed chunk of the day"), so:
+`unfreeze` flushes held packets (see below), re-checks destroyed-block ghosts, clears `frozen`, and then evaluates
+whether another switch is needed. A teleport that arrived during the freeze is therefore not lost.
 
-- switches cannot accumulate translation drift (always from pristine originals);
-- the server's per-player chunk publisher is never perturbed (no `refreshChunk`, no fake moves —
-  zero impact on Java players);
-- after reconnect, cache is empty and rebuilds from the server's fresh send set at offset 0
-  (identity) before the first switch decision — there is no stale cross-session state by
-  construction.
+### Switch triggers
 
-## Fail-safe policy (how bugs behave)
+- **Server-authoritative positions** (`ClientboundPlayerPositionPacket`, `ClientboundTeleportEntityPacket` and
+  `EntityPositionSync` for the player's id). The packet itself is the teleport the client receives, so no snap is
+  injected. The cooldown is bypassed, because the client is already at that position. A relative Y is a delta
+  from the anchor.
+- **Client movement** (`MovePlayerPos`, `MovePlayerPosRot`). Subject to the margin and the cooldown, except when the
+  client is already outside its window: then the switch is not deferred (`window/SwitchPolicy`), because the view
+  is missing content. Measured by simulation, not on a live client.
+- **Manual** (`/hauteur window`). Forced target, snap injected. Refused while the cooldown (times backoff) has not elapsed, so it cannot be used to replay the cache on every command. The requested height must be within 4 blocks of the player's current height: the snap moves the client there, so any other value would be a vertical teleport.
 
-- Any throwable inside translation → original packet forwarded untranslated, error logged **once**,
-  counter incremented. Never disconnect, never drop, never corrupt.
-- Malformed/short/oversized chunk payload → **tolerant normalization**: content up to the
-  anomaly is preserved and re-homed, the rest is canonical air, output always has exactly the
-  expected section count (so Geyser's decoder can never run past the payload into the light
-  data), and the `anomaly-normalized chunks` counter surfaces it in `/skywindow doctor`.
-- Block interactions sent during a switch freeze → queued and replayed on unfreeze in the sender's
-  original frame (never dropped, never double-applied; queue overflow drops explicitly and reverts
-  any possible ghost block authoritatively).
-- Pipeline not attachable after ~1 minute of retries → the player is reported and stays passive
-  (vanilla behavior). The extension logs why.
-- World-manager field not found (platform reorg) → collision fix disabled globally with an explicit
-  log line; everything else keeps working. Rubber-band protection is then platform-degraded —
-  documented, visible, and not silently half-on.
+### Journal
 
-## Seams (the only version-sensitive parts) and upgrade policy
+Block updates, section updates and block-entity data received for a cached chunk are recorded in real coordinates,
+keeping the latest state per position. A block change removes the block-entity entry at the same position. A chunk
+whose journal exceeds 4096 positions is evicted instead of being replayed stale.
 
-| Seam | Used for | Breaks as | Detected by |
+## Freeze: outbound classification
+
+`OutboundYTransforms.frozenDisposition(packet)` decides each packet during a freeze:
+
+| Class | Packets | Disposition |
+|---|---|---|
+| No absolute Y | Everything else (rotation, interaction, inventory, command requests without coordinates) | Transmit unchanged |
+| Movement | `MovePlayerPos`, `MovePlayerPosRot`, `MoveVehicle` | Hold if `freeze-hold-movement`, else drop |
+| Block-positioned action | `PlayerAction` (digging, and a `DROP_ITEM` with a non-zero position), `UseItemOn`, `PickItemFromBlock`, `SignUpdate`, `SetCommandBlock`, `SetStructureBlock`, `SetJigsawBlock`, `JigsawGenerate`, `BlockEntityTagQuery`, `SetTestBlock`, `TestInstanceBlockAction` | Hold if `freeze-hold-actions`, else drop |
+| Unsigned command | `ChatCommandSigned` with no signatures | Drop (coordinates cannot be placed in a frame) |
+| Signed command | `ChatCommandSigned` with signatures | Transmit unchanged (never rewritten) |
+
+Held overflow (more than 48 entries) is a drop. A dropped destroy (`START_DIGGING`, `CANCEL_DIGGING`,
+`FINISH_DIGGING`) is recorded so that its block is re-sent when the freeze ends. Both candidate frames are
+checked, and only positions inside the visible window are re-sent. The record keeps up to 256 distinct positions
+per freeze. Past that, a destroy is not re-checked, and `/hauteur stats` counts it (`GHOST_OVERFLOWS`).
+
+Before this version, sign, command block, structure, jigsaw and pick-block packets were transmitted without
+translation during a freeze. They are now held as block actions.
+
+## Frame resolution for held packets
+
+When the freeze ends, each held packet has two candidate real positions: one under the previous offset and one
+under the current offset. They differ by the switch delta, which is at least 16. `FrameResolver` chooses:
+
+- **Movement:** the candidate within `travelBound` of the anchor. `travelBound = 24 + 60 * elapsedSeconds`, which
+  is a generous bound on player speed. If both candidates or neither are within the bound, the packet is dropped.
+- **Block action:** the candidate whose block centre is within 7 blocks (Bedrock reach) of the anchor. Both or
+  neither: drop.
+
+The anchor starts at the switch's `realY` and advances with each resolved movement. Packets are replayed in the
+order they were sent, so the anchor follows the player's path.
+
+This is a plausibility check, not a proof. It is correct when the anchor is within about 10 blocks of the true
+position and the switch delta is at least 64. Smaller deltas can make both frames plausible; the resolver then
+drops the packet. It never chooses the frame that is less plausible.
+
+## Chunk cache budget
+
+`ChunkCache` counts, per chunk: the chunk data, the heightmap arrays, the block-entity count, the light update
+arrays, and 128 bytes per journal entry. The budget is strict: entries are evicted least-recently-used until the
+total fits. A chunk larger than the budget by itself is not stored, and an older version of that chunk is removed.
+Replays cover only what is cached, so such chunks are missing from the client after a switch until the server
+resends them. This is documented in the README.
+
+The estimate is conservative, not exact: it does not count the object headers of the packet and NBT contents of
+block entities.
+
+## Failure policy
+
+| Failure | Response |
+|---|---|
+| Exception in an inbound transform | Type quarantined for the session. If the window is active, packets of that type are dropped (fail closed); at offset 0 they pass, since real space is already correct. |
+| Exception in an outbound transform | Same policy. |
+| Exception in a held packet's replay | Packet dropped, type quarantined. |
+| Exception replaying one chunk during a switch | That chunk is skipped, counted as an anomaly, and logged. The switch completes. |
+| Exception during unfreeze | Held packets and ghost re-sends are discarded, the freeze is cleared, and the error is logged. |
+| Chunk does not fit the cache budget | Not cached, counted, replay skipped for it. |
+| Journal overflow | Chunk evicted, counted. |
+| Attach fails after retries | Session runs untranslated; `/hauteur info` and `/hauteur doctor` report it. |
+| World-manager wrap fails | Reported by `/hauteur doctor`; collision and container reads may disagree with the window. |
+
+The quarantine is kept per session and is cleared on reconnect. `/hauteur doctor` reports the current session's
+quarantined types with the first error, so that a deterministic failure can be diagnosed.
+
+## Lifecycle
+
+- **Login and respawn:** the chunk cache is cleared, `worldGeneration` increments, the freeze is cancelled, the
+  offset returns to 0, and the window is re-derived at the next position packet. Scheduled switches from the old
+  generation are ignored.
+- **Disconnect:** the handler is removed, and its state is reset. The session state is removed by the disconnect
+  event, or by a sweeper every 60 s if the event never fired. The sweeper is cancelled on shutdown.
+- **Reload:** the cache budget is re-applied to every tracked session. Enabling re-attaches connected players.
+  Disabling removes every handler and restores the world manager, while keeping session states so that a later
+  re-enable does not depend on a reconnect.
+- **Detaching a shifted client:** removing the handler while the offset is non-zero on a live channel (disable,
+  reload, shutdown) first gives the client its real-space view back: cached chunks are replayed at offset 0 and
+  the player is snapped to the last real Y. Without this, the client would stay in a frame that nothing translates
+  any more. Nothing is sent on a closed channel. Covered by `HauteurHandlerTest` on an embedded channel; the
+  real-client behaviour is covered by the manual procedure (see VERIFICATION).
+- **Shutdown:** the sweeper is cancelled, handlers are removed, states are cleared, and the world manager is restored.
+- **Dimension read failure:** the window is re-derived from live data. If that read fails, the previous snapshot is
+  kept, so windowing does not switch off while the client is shifted.
+
+## World manager wrapper
+
+`ShiftedWorldManager` wraps Geyser's `WorldManager`, so that direct, session-aware reads (collision correction,
+swimming and climbing checks, container checks, decorated pots) resolve through the caller's offset. Installation is
+the only reflection point in the extension, and it is reported by `/hauteur doctor`.
+
+The wrapper adds the offset only where Geyser reads the real world, and it uses Geyser's own rule for that: the
+platform owns its world (`hasOwnChunkCache()`, Geyser-Spigot) or the session's Erosion backend is active. Otherwise
+Geyser reads its session chunk cache, which already holds window-space chunks, and the read is passed through. The
+offset is therefore never applied twice. Async reads stay async, and batch reads stay one request, with the batch
+box shifted and the result indexed as before.
+
+## What is not guaranteed
+
+- Client-side adoption of a frame is inferred from time and plausibility; Bedrock sends no acknowledgement that
+  Hauteur can read.
+- Whether a snap and the replayed terrain look correct on a real client.
+- Performance under load on a live server and on the client. Replays run on the event loop; the codec part is measured
+  (see [Replay cost](#replay-cost)).
+
+## Replay cost
+
+Measured with `dev/bench/SectionCodecBench.java`, compiled with ECJ and run on the JRE 25 of a 2-vCPU sandbox
+(20 000 iterations per run, six runs in total; the ranges below are the min and max across them):
+
+| Payload | Size | Per chunk | Full cache (2048 chunks) |
 |---|---|---|---|
-| `NetworkConstants.CODEC_NAME` / `MANAGER_NAME` pipeline insertion on the downstream channel | the choke point | attach retry → passive | `/skywindow doctor` (not attached), startup log |
-| `GeyserBootstrap` field assignment of type `WorldManager` | collision/container read correction | log + degraded mode | `/skywindow doctor` |
-| mcprotocollib packet class shapes (`@With` builders, field names) | all transforms | per-packet: fail-safe passthrough (one log line) | `doctor` counters (`malformed` stays 0; watch rings) |
-| cloudburst `Vector3*`/math types | positions | none expected (shared API of the pinned build) | CI compile |
+| Sparse, 24 sections | 3.8 KB | 1.5 to 3.4 µs | 3 to 7 ms |
+| Dense, 24 sections | 8.9 KB | 3.8 to 4.8 µs | 8 to 10 ms |
 
-Upgrade procedure for a new Geyser pin: bump `geyser.version` in the pom → CI compile → CI unit
-tests → re-grep Geyser translators for new position-carrying packets and extend
-docs/PACKET-MATRIX.md + the transform switch accordingly → staging checklist
-(docs/VERIFICATION.md). The matrix in that doc doubles as the audit checklist: a packet type
-*missing* from it is the only way this design can be wrong on new protocol versions, and the
-fail-safe makes even that degrade into "untranslated for that packet type" (visible), not
-"corrupted state".
+These numbers cover the reslice only. They exclude the packet encoding that Geyser performs for Bedrock, the network,
+and the client's own processing, which are likely to dominate. A switch's freeze is the fixed `freeze-ms` timer, not
+the replay time.
+
+Replays cover only the chunks the cache holds. The cache follows `ClientboundForgetLevelChunkPacket`, so it holds
+the chunks the server believes the client has loaded. The Bedrock client can unload chunks on its own render distance,
+and a replay would then resend those for nothing. How large that waste is has not been measured. Restricting the
+replay to the visible area would avoid it, but would also skip chunks the client still holds, so it needs a live
+measurement first.
+
+Even halving the reslice would save only about 1.5 to 5 ms per switch, against a 400 ms freeze. Changes to the replay path
+should come with a measurement that shows the freeze or the replayed volume going down.
+

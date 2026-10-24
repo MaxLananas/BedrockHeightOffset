@@ -6,3 +6,13 @@ target/
 .project
 .settings/
 dependency-reduced-pom.xml
+__pycache__/
+*.py[cod]
+*.log
+mvn.log
+.DS_Store
+# Release-workflow scratch files, generated locally when reproducing a release.
+release-notes.md
+SHA256SUMS.txt
+build-info.txt
+/hauteur-*.jar

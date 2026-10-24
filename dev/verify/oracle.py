@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SkyWindow algorithm oracle.
+Hauteur algorithm oracle.
 
 This mirrors the pure logic in WindowRules.java / SectionCodec.java and then checks the SPEC
 (coverage, exact round-trips, pruning boundaries, switch cadence), so an implementation error shows
@@ -9,59 +9,50 @@ else. It runs anywhere; the Java mirror is exercised by JUnit in CI.
 
     python3 dev/verify/oracle.py [rounds]
 """
+import math
 import random
 import struct
 import sys
 
 SECTION = 16
 
-# --------------------------------------------------------------------------- WindowRules mirror
-
 def floor_to_section(y):
     return (y // SECTION) * SECTION
-
 
 def windowing_needed(java_min_y, java_max_y, client_min_y, client_height):
     return java_min_y < client_min_y or java_max_y - 1 > client_min_y + client_height - 1
 
-
 def max_useful_offset(java_max_y, client_min_y, client_height):
     return floor_to_section(java_max_y - client_min_y - client_height)
-
 
 def target_offset(real_y, client_min_y, client_height, max_offset):
     if max_offset <= 0:
         return 0
     centered = real_y - (client_min_y + client_height / 2.0)
-    snapped = int(centered / SECTION + 0.5) * SECTION  # matches Java floor(x+0.5)
+    snapped = math.floor(centered / SECTION + 0.5) * SECTION  # Java Math.floor, not int() truncation
     return max(0, min(max_offset, snapped))
 
-
 def should_switch(real_y, current_offset, client_min_y, client_height, margin, max_offset):
+    # Mirrors WindowRules.shouldSwitch: the margin is capped so the post-switch band never reaches a trigger zone.
+    effective_margin = max(0, min(margin, client_height // 2 - SECTION))
     client_y = real_y - current_offset
-    near_top = client_y >= client_min_y + client_height - margin
-    near_bottom = current_offset > 0 and client_y <= client_min_y + margin
+    near_top = client_y >= client_min_y + client_height - effective_margin
+    near_bottom = current_offset > 0 and client_y <= client_min_y + effective_margin
     if not near_top and not near_bottom:
         return False
     return target_offset(real_y, client_min_y, client_height, max_offset) != current_offset
-
-
-# --------------------------------------------------------------------------- SectionCodec mirror
 
 EMPTY_SECTION = bytes([0, 0, 0, 0, 0, 0, 0, 0])
 BLOCK_MAX_PALETTE_BITS = 8
 BIOME_MAX_PALETTE_BITS = 3
 
-
 class FormatError(Exception):
     pass
-
 
 def read_u8(data, p):
     if p >= len(data):
         raise FormatError("eof")
     return data[p]
-
 
 def read_varint(data, p):
     value = 0
@@ -74,7 +65,6 @@ def read_varint(data, p):
             return value, p + i + 1
     raise FormatError("varint too long")
 
-
 def skip_palette(data, p, max_list_bits):
     bits = read_u8(data, p)
     p += 1
@@ -83,13 +73,15 @@ def skip_palette(data, p, max_list_bits):
         return p
     if bits <= max_list_bits:
         count, p = read_varint(data, p)
+        if count >= 2 ** 31:
+            # SectionCodec reads the count as a Java int: a value at or above 2^31 is negative and rejected.
+            raise FormatError("negative palette size")
         for _ in range(count):
             _, p = read_varint(data, p)
     long_count, p = read_varint(data, p)
     if long_count < 0 or long_count * 8 > len(data) - p:
         raise FormatError("storage oob")
     return p + long_count * 8
-
 
 def section_length(data, offset):
     p = offset + 4
@@ -100,7 +92,6 @@ def section_length(data, offset):
     if p > len(data):
         raise FormatError("section oob")
     return p - offset
-
 
 def reslice(data, in_sections, shift, out_sections):
     """Strict walk used by the property checks below (raises on anything malformed)."""
@@ -120,7 +111,6 @@ def reslice(data, in_sections, shift, out_sections):
         else:
             out += EMPTY_SECTION
     return bytes(out)
-
 
 def reslice_tolerant(data, in_sections, shift, out_sections):
     """Mirror of SectionCodec.resliceTolerant: never raises; pads/normalizes; flags anomalies."""
@@ -146,12 +136,8 @@ def reslice_tolerant(data, in_sections, shift, out_sections):
             out += EMPTY_SECTION
     return bytes(out), len(secs), anomaly
 
-
-# --------------------------------------------------------------------------- section generator
-
 def gen_singleton(block_id=0, biome_id=0):
     return struct.pack(">hh", 0, 0) + bytes([0]) + varint(block_id) + bytes([0]) + varint(biome_id)
-
 
 def gen_global(long_count=256, block_count=0):
     out = struct.pack(">hh", block_count, 0)
@@ -159,7 +145,6 @@ def gen_global(long_count=256, block_count=0):
     out += varint(long_count) + bytes(8 * long_count)
     out += bytes([0]) + varint(0)  # biome singleton
     return out
-
 
 def gen_list(palette, storage_words=3):
     out = struct.pack(">hh", 8, 0)
@@ -170,7 +155,6 @@ def gen_list(palette, storage_words=3):
     out += bytes([0]) + varint(0)
     return out
 
-
 def varint(value):
     out = bytearray()
     while value & ~0x7F:
@@ -179,13 +163,9 @@ def varint(value):
     out.append(value)
     return bytes(out)
 
-
-# --------------------------------------------------------------------------- properties
-
 C_MIN, C_H = -512, 1024            # extended-height Bedrock overworld client
 J_MIN, J_MAX = -64, 1952           # BTE-like Java dimension
 MARGIN = 64
-
 
 def property_reachable_window():
     """Every real player Y from the floor to just above the roof maps inside the client window,
@@ -209,7 +189,6 @@ def property_reachable_window():
         for by in (low, min(real_y, high), max(real_y - 1, low)):
             if low <= by <= high:
                 assert C_MIN <= by - o <= C_MIN + C_H - 1, (real_y, o, by)
-
 
 def property_switch_cadence():
     """Climbing from floor to roof triggers few switches; each re-centering puts the player back at
@@ -241,6 +220,24 @@ def property_switch_cadence():
                 offset = new
     assert switches <= 1, switches  # one switch at most, then hysteresis holds
 
+def property_no_flicker_at_any_margin():
+    """Mirrors WindowRulesTest.hoveringAcrossASectionBoundaryCausesAtMostOneSwitchAtAnyMargin: jittering a few
+    blocks across the point where the snapped target changes causes at most one switch, for every margin in the
+    configured range and every window height. Before the margin cap, a margin of H/2 - 8 or more flickered."""
+    for height in (256, 320, 512, 1024):
+        for c_min in (-512, 0):
+            centre = c_min + height // 2
+            for margin in range(0, 257, 8):
+                for t in range(0, 1025, SECTION):
+                    boundary = t + centre + 8
+                    offset = t
+                    switches = 0
+                    for i in range(40):
+                        real_y = boundary + 3 if i % 2 == 0 else boundary - 4
+                        if should_switch(real_y, offset, c_min, height, margin, 4096):
+                            offset = target_offset(real_y, c_min, height, 4096)
+                            switches += 1
+                    assert switches <= 1, (height, c_min, margin, t, switches)
 
 def property_fits_never_switches():
     for java_min, java_max, c_min, c_h in [
@@ -249,7 +246,6 @@ def property_fits_never_switches():
     ]:
         needed = windowing_needed(java_min, java_max, c_min, c_h)
         assert needed != (java_min >= c_min and java_max - 1 <= c_min + c_h - 1)
-
 
 def property_reslice_semantics():
     """reslice(out[w]=in[w+shift]) on real section bytes; identity when shift=0 and sizes match;
@@ -288,7 +284,6 @@ def property_reslice_semantics():
         payload = b"".join(gen_singleton(i, 0) for i in range(n))
         assert reslice(payload, n, 0, n) == payload
 
-
 def property_malformed_input_throws():
     """The strict walker raises on any truncation (never mis-slices silently)."""
     good = b"".join(gen_singleton() for _ in range(4))
@@ -303,7 +298,13 @@ def property_malformed_input_throws():
         raise AssertionError("trailing bytes not detected")
     except FormatError:
         pass
-
+    # A palette size at or above 2^31 is malformed (Java reads it as a negative int), never a skip.
+    bad = bytes([0, 0, 0, 0, 4, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F])
+    try:
+        section_length(bad, 0)
+        raise AssertionError("negative palette size not detected")
+    except FormatError:
+        pass
 
 def property_tolerant_reslice_contract():
     """reslice_tolerant: output ALWAYS walks clean to exactly out_sections, content up to the
@@ -342,7 +343,6 @@ def property_tolerant_reslice_contract():
                     seg = out[pos:pos + section_length(out, pos)]
                     assert seg == sections[src], (trial, src, dst)
 
-
 def property_reachable_top_formula():
     mx = max_useful_offset(J_MAX, C_MIN, C_H)
     top = min(J_MAX - 1, C_MIN + C_H - 1 + mx)
@@ -350,7 +350,6 @@ def property_reachable_top_formula():
     # with an artificial cap, the reachable top follows, still clamped by the world itself
     assert min(J_MAX - 1, C_MIN + C_H - 1 + 1000) == 1511
     assert min(320 - 1, C_MIN + C_H - 1 + 0) == 319
-
 
 def property_section_size_bounds():
     """A global section has the canonical 1.21 size (4 + 1 + 1 + 2048 + 1 + 1),
@@ -363,10 +362,10 @@ def property_section_size_bounds():
     sparse = 126 * len(s)
     assert 1000 < sparse < 2048  # ~1KB for an all-air BTE sky chunk payload: cheap to replay
 
-
 def main():
     rounds = int(sys.argv[1]) if len(sys.argv) > 1 else 1
-    props = [property_reachable_window, property_switch_cadence, property_fits_never_switches,
+    props = [property_reachable_window, property_switch_cadence, property_no_flicker_at_any_margin,
+             property_fits_never_switches,
              property_reslice_semantics, property_malformed_input_throws,
              property_tolerant_reslice_contract, property_reachable_top_formula,
              property_section_size_bounds]
@@ -375,7 +374,6 @@ def main():
             prop()
             print(f"  ok: {prop.__name__} (round {r})")
     print("ALL PROPERTIES PASS")
-
 
 if __name__ == "__main__":
     main()

@@ -4,25 +4,61 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>fr.buildtheearth</groupId>
-    <artifactId>skywindow</artifactId>
-    <version>1.0.0</version>
+    <groupId>io.github.maxlananas</groupId>
+    <artifactId>hauteur</artifactId>
+    <version>1.1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
-    <name>SkyWindow</name>
-    <description>SkyWindow: a Geyser extension that lets Bedrock players build at extreme Java-world heights without rubber-banding</description>
+    <name>Hauteur</name>
+    <description>Hauteur: a Geyser extension that lets Bedrock players build at extreme Java-world heights without rubber-banding</description>
+    <url>https://github.com/MaxLananas/Hauteur</url>
+    <inceptionYear>2026</inceptionYear>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>MaxLananas</id>
+            <name>MaxLananas</name>
+            <url>https://github.com/MaxLananas</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <url>https://github.com/MaxLananas/Hauteur</url>
+        <connection>scm:git:https://github.com/MaxLananas/Hauteur.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/MaxLananas/Hauteur.git</developerConnection>
+        <tag>HEAD</tag>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub Issues</system>
+        <url>https://github.com/MaxLananas/Hauteur/issues</url>
+    </issueManagement>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>21</maven.compiler.release>
         <!--
+          Zip entry timestamps. The default is a fixed instant so local builds are reproducible too; the release
+          workflow overrides it with the tagged commit time (-Dproject.build.outputTimestamp=...), so the same tag
+          always produces the same jar bytes.
+        -->
+        <project.build.outputTimestamp>2026-10-23T00:00:00Z</project.build.outputTimestamp>
+        <!--
           Geyser build this extension compiles against. The extension runs inside the Geyser
           plugin's classloader (parent-first), so the shaded mcprotocollib / cloudburst-protocol /
           netty classes it provides are the exact runtime classes - they are compileOnly here and
-          never bundled. Bump together with the target Geyser build and re-run /skywindow doctor.
+          never bundled. Bump together with the target Geyser build and re-run /hauteur doctor.
         -->
         <geyser.version>2.11.2-SNAPSHOT</geyser.version>
-        <junit.version>5.11.4</junit.version>
+        <junit.version>6.1.3</junit.version>
     </properties>
 
     <repositories>
@@ -60,7 +96,7 @@
     </dependencies>
 
     <build>
-        <finalName>skywindow-${project.version}</finalName>
+        <finalName>hauteur-${project.version}</finalName>
         <resources>
             <!-- Single source of truth for the version: the pom. -->
             <resource>
@@ -72,7 +108,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
+                <version>3.16.0</version>
                 <configuration>
                     <compilerArgs>
                         <arg>-Xlint:all,-processing,-serial</arg>
@@ -82,7 +118,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.5.0</version>
+                <version>3.6.3</version>
                 <executions>
                     <execution>
                         <id>enforce-no-server-plugin-apis</id>
@@ -118,7 +154,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
+                <version>3.6.0</version>
             </plugin>
         </plugins>
     </build>

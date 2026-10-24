@@ -1,72 +1,73 @@
 # Packet matrix
 
-Audit stamp: last re-derived against Geyser `2.11.2-SNAPSHOT` / mcprotocollib `1.28.1` (2026-09-08).
-`SkyWindowCore.TESTED_AGAINST` carries the same string and is printed by `/skywindow doctor`, so a
-running server can always be checked against the audit it was compiled with.
+Every packet class in mcprotocollib that carries an absolute Y, or that Geyser reads a Y from, and what Hauteur does
+with it. `A` = shifted by the offset, `R` = relative and never shifted, `-` = no absolute Y in this shape.
 
-Every Java-protocol packet type that crosses the SkyWindow choke point (`SkyWindowHandler`, positioned
-after mcprotocollib's `codec`), with its per-direction policy. **A** = absolute Y shifted by ±O,
-**S** = section index shifted (A applied inside re-slicing), **R** = relative quantity — *must never
-be touched*, **—** = passes through untouched by design.
+Audited against Geyser `2.11.2-SNAPSHOT` (commit `b2dab3c73`) and MCProtocolLib `b77d50c3` (the 2026-07-09
+snapshot Geyser depends on). Re-audit on every Geyser bump, following [CONTRIBUTING.md](../CONTRIBUTING.md).
 
-This file is the contract between `translate/InboundYTransforms`, `translate/OutboundYTransforms`
-and `translate/WindowedChunks`. A new packet type appearing in an update is a *reviewed decision*,
-not an accident: the matrix is re-derived per Geyser pin by grepping Geyser translators for
-position consumers (see docs/ARCHITECTURE.md "Seam upgrades").
+## Server to client (inbound, real to client)
 
-## Clientbound (Java server → Geyser): shift by −O
+| Packet | Field(s) | Action | Note |
+|---|---|---|---|
+| `ClientboundLevelChunkWithLightPacket` | chunk payload | Re-home sections (`WindowedChunks`) | Original cached; light arrays not re-homed. A code search of the Geyser default branch finds no reference to `LightUpdateData` in Geyser core, while it finds `getChunkData` in the chunk translator. |
+| `ClientboundForgetLevelChunkPacket` | x, z | Cache eviction | No Y. |
+| `ClientboundBlockUpdatePacket` | entry position | A; journaled | |
+| `ClientboundSectionBlocksUpdatePacket` | entries; `chunkY` | A entries; `chunkY` -= offset/16; journaled | |
+| `ClientboundBlockEntityDataPacket` | position | A; journaled | NBT is coordinate-free. |
+| `ClientboundBlockEventPacket`, `ClientboundBlockDestructionPacket`, `ClientboundLevelEventPacket` | position | A | |
+| `ClientboundLevelParticlesPacket`, `ClientboundSoundPacket` | y | A | Offsets and velocity are R. |
+| `ClientboundExplodePacket` | center | A | `playerKnockback` is R. |
+| `ClientboundDamageEventPacket` | sourcePosition (absolute, nullable) | A | Null when the source has no position. Entity and cause ids are not positions. |
+| `ClientboundAddEntityPacket` | y | A | |
+| `ClientboundTeleportEntityPacket` | position (absolute) | A | Relative Y (`R`) is not shifted. Player id: authoritative switch trigger. |
+| `ClientboundEntityPositionSyncPacket` | position | A | Player id: authoritative switch trigger. |
+| `ClientboundPlayerPositionPacket` | position (absolute) | A | Own-player teleport. Relative Y is not shifted. Authoritative switch trigger. |
+| `ClientboundMoveVehiclePacket` | position | A | |
+| `ClientboundMoveMinecartPacket` | each step position | A | Step movement is R. |
+| `ClientboundPlayerLookAtPacket` | y (target) | A | |
+| `ClientboundOpenSignEditorPacket` | position | A | |
+| `ClientboundSetDefaultSpawnPositionPacket` | global position | A | |
+| `ClientboundLoginPacket`, `ClientboundRespawnPacket` | - | New world: cache cleared, offset reset | The death location is written unshifted. Geyser's `setLastDeathPosition` writes it to the Bedrock player metadata (`PLAYER_LAST_DEATH_POS`). A search of the Geyser tree at `b2dab3c73` finds no Java reader of the stored value. Hauteur calls `startNewWorld`, which resets the offset, before forwarding these packets, so the value is in the real frame. A later switch does not rewrite it; the effect on the compass is untested. Re-check on every Geyser bump. |
+| `ClientboundMoveEntityPos/Rot/PosRot`, `ClientboundSetEntityMotionPacket` | delta or velocity | R | Shifting relative quantities desyncs entities. |
+| `ClientboundChunksBiomesPacket` | biome payload | Not windowed | Geyser does not read this packet. |
+| `ClientboundDebug*`, `ClientboundGameTestHighlightPosPacket`, `ClientboundTestInstanceBlockStatus`, `ClientboundMapItemDataPacket` | positions | Not windowed | Debug and test tooling, or no client-visible effect. Documented, not verified. |
 
-| Packet | What is shifted | Notes |
-|---|---|---|
-| `LevelChunkWithLight` | S: payload section array (out[w]=in[w+Δ]); block-entity `y` −O with pruning outside the real-section array | Heightmaps & light data: **pass through** — Geyser master consumes neither (verified @ 2.11.2); client-side lighting needs no Y knowledge beyond what Geyser derives from the translated blocks. |
-| `SectionBlocksUpdate` | `chunkY` section index −Δs; each `BlockChangeEntry` absolute pos −O | collib stores entries as global positions, both are shifted consistently. |
-| `BlockUpdate` | `BlockChangeEntry` pos −O | |
-| `AddEntity` | `y` (double) −O | `movement` is R; `data` is verified to carry no packed coords in current protocol (FallingBlockData stores the block state id only). |
-| `TeleportEntity` | `position` −O | `deltaMovement` is R. relatives list semantics: absolute positions per vanilla server usage; monitor records the packet for the switch-snap reuse. |
-| `EntityPositionSync` | `position` −O | 1.21.2+ path; `deltaMovement` R. |
-| `MoveVehicle` | `position` −O | |
-| `MoveMinecart` | each lerp-step `position` −O | `movement` in the step is R. |
-| `BlockEvent` | pos −O | note blocks. |
-| `BlockDestruction` | pos −O | break progress render. |
-| `BlockEntityData` | pos −O | NBT contents (sign lines etc.) are coordinate-free. |
-| `LevelEvent` | pos (Vector3i) −O | |
-| `LevelParticles` | `y` −O | offsets & velocity are R. |
-| `Sound` (category-positions) | `y` −O | |
-| `Explode` | `center` −O | `playerKnockback` R; block-particle list carries no coords in current collib shape. |
-| `SetDefaultSpawnPosition` | `globalPos.position` −O | respawn target / compass. |
-| `Login` | — (side-effect: capture `entityId` as player java id; cache/window refresh) | no position to shift in current shape. |
-| `Respawn` | — (side-effect: clear chunk cache, recompute window) | dimension change handled by re-send semantics of the server itself. |
-| `ForgetLevelChunk` | — (side-effect: cache eviction) | x/z only, no Y. |
-| Everything else (`MoveEntity*`, `SetEntityMotion`, `SetHealth`, `SetPassengers`, damage, rotations, inventories, containers, chat, scoreboard, teams, boss bars, border, dimension sync, …) | — | no absolute Y, or handled upstream by their nature. `MoveEntityPos/Rot` are *relative by protocol* — shifting them is the classic desync bug; they must stay untouched. |
+## Client to server (outbound, client to real)
 
-## Serverbound (Geyser → Java server): shift by +O
+| Packet | Field(s) | Action | During a freeze |
+|---|---|---|---|
+| `ServerboundMovePlayerPosPacket`, `ServerboundMovePlayerPosRotPacket` | y | A (`y + O`); switch evaluation | Hold (`freeze-hold-movement`) |
+| `ServerboundMovePlayerRotPacket`, `ServerboundMovePlayerStatusOnlyPacket` | - | - | Transmit |
+| `ServerboundMoveVehiclePacket` | position | A | Hold (movement) |
+| `ServerboundPlayerActionPacket` | position (digging, and a drop taken from the block-break action) | A for `START/CANCEL/FINISH_DIGGING` and a non-zero `DROP_ITEM`; other actions carry a zero position and are untouched | Block actions: hold (`freeze-hold-actions`); dropped digs are re-sent. Others: transmit |
+| `ServerboundUseItemOnPacket` | position | A (cursor and face are R) | Hold (`freeze-hold-actions`) |
+| `ServerboundPickItemFromBlockPacket` | pos | A | Hold |
+| `ServerboundSignUpdatePacket` | position | A | Hold |
+| `ServerboundSetCommandBlockPacket` | position | A | Hold |
+| `ServerboundSetStructureBlockPacket` | position | A (offset and size are R) | Hold |
+| `ServerboundSetJigsawBlockPacket` | position | A | Hold |
+| `ServerboundJigsawGeneratePacket` | position | A (levels are R) | Hold |
+| `ServerboundBlockEntityTagQueryPacket` | position | A | Hold |
+| `ServerboundSetTestBlockPacket` | position | A | Hold |
+| `ServerboundTestInstanceBlockActionPacket` | pos | A | Hold |
+| `ServerboundChatCommandSignedPacket` | command | Rewrites the first position triple of allowlisted commands, only when unsigned | Drop when unsigned; transmit when signed |
+| `ServerboundInteractPacket` | location | R (offset within the entity) | Transmit |
+| `ServerboundAcceptTeleportationPacket` | id | - | Transmit |
+| `ServerboundSetCommandMinecartPacket` | command, flag | - (no position on the wire) | Transmit |
+| Other serverbound packets (inventory, chat, containers, abilities, input, ...) | - | - | Transmit |
 
-| Packet | What is shifted | Notes |
-|---|---|---|
-| `MovePlayerPos`, `MovePlayerPosRot` | `y` +O | Also the position monitor for switch evaluation (realY = y+O, no extra tracking state). |
-| `PlayerAction` (all dig/place/start/abort states) | pos +O | During a switch: held (freeze) and replayed on unfreeze translated for the sender's frame; overflow (16) drops, and dropped destroy positions get an authoritative block re-send. |
-| `UseItemOn` | pos +O | Held across switches like `PlayerAction`. `cursorX/Y/Z` are R (inside-block offsets); `face` is block-relative. |
-| `MoveVehicle` | position +O | |
-| `PickItemFromBlock` | pos +O | |
-| `SignUpdate` | pos +O | |
-| `SetCommandBlock` | pos +O | OP-tool edit at altitude. |
-| `SetCommandMinecart` | — | carries no position at all on the wire — fields are exactly `(entityId, command, doesTrackOutput)` (verified 2026-09-08); the minecart's block position lives server-side. |
-| `SetStructureBlock` | pos +O | `offset`/`size` are R. |
-| `SetJigsawBlock` | pos +O | |
-| `ChatCommandSigned` | command string: first position triple's Y +O — **only** for allowlisted commands **and** when `signatures` is empty | Signed commands are never modified (would invalidate the signature). |
-| `AcceptTeleport` | — | id-only; the id we snap with reuses the server's last teleport so acks line up with Geyser's own state machine. |
-| `ContainerClick`, `SetCarriedItem`, `Swing`, `PlayerCommand`, `Input`, `Interact`, `Attack`, `Spectate`, `CloseContainer`, … | — | no absolute Y (entity-relative targets are resolved by id on the server). |
+## Why some packets are dropped rather than guessed
 
-## Why the Bedrock side is not touched at all
+- **Unsigned commands** carry coordinates inside a string. The frame cannot be decided from the string alone, and
+  signed commands cannot be rewritten without invalidating their signature.
+- **Movement and block actions** are held and resolved by plausibility (see [ARCHITECTURE.md](ARCHITECTURE.md)).
+  A packet with no unique plausible frame is dropped, so it never lands at the wrong altitude.
 
-Old SkyWindow rewrote `UpdateBlock`/`SetEntityData`/`MoveActor…` on the RakNet wire. Two facts killed
-that (see audit, docs/ARCHITECTURE.md):
+## Audit steps
 
-1. Geyser's own cache/translation already produces *window-consistent* Bedrock packets once the
-   Java packets are shifted at the choke point — rewriting them again is double translation by
-   construction, and the 3.x "blocks vanish" behaviour is exactly that.
-2. The Bedrock packet objects/serializers are not a stable API surface for an extension to own.
-
-The only remaining real-space noise that reaches the Bedrock wire comes from *platform listeners*
-in the Geyser bootstrap (place-sound, piston BE cosmetics). Those are documented in README as
-cosmetic and left alone rather than patched mid-flight.
+1. Search Geyser's translators for the packet classes listed above and for any new `Vector3i`/`position`/`getY`
+   usage in `core/src/main/java/org/geysermc/geyser/translator/`.
+2. For each position-carrying packet, classify it as A, R or `-` and record the reason.
+3. Update `InboundYTransforms`, `OutboundYTransforms` (including `frozenDisposition` and `blockPosition`), the
+   tests in `translate/`, and `dev/verify/oracle.py` in the same commit.
