@@ -65,6 +65,17 @@ class PositionCoverageTest {
     }
 
     @Test
+    void dropFromTheBlockBreakActionNamesItsBlockAndIsShifted() {
+        // Geyser copies the client's block position into this drop (BlockBreakHandler). It is a block in the
+        // client frame, so it is shifted and held like a dig. The zero-position drop above is not.
+        var drop = new ServerboundPlayerActionPacket(PlayerAction.DROP_ITEM, Vector3i.from(1, 600, 1), Direction.UP, 0);
+        assertEquals(OutboundYTransforms.FrozenDisposition.HOLD_BLOCK_ACTION, OutboundYTransforms.frozenDisposition(drop));
+        assertEquals(Vector3i.from(1, 600, 1), OutboundYTransforms.blockPosition(drop));
+        var shifted = (ServerboundPlayerActionPacket) OutboundYTransforms.apply(drop, 1000, CommandYRewrite.Config.DISABLED);
+        assertEquals(1600, shifted.getPosition().getY());
+    }
+
+    @Test
     void diggingStillNamesABlockAndIsShifted() {
         var dig = new ServerboundPlayerActionPacket(PlayerAction.FINISH_DIGGING, Vector3i.from(1, 600, 1), Direction.UP, 0);
         assertEquals(OutboundYTransforms.FrozenDisposition.HOLD_BLOCK_ACTION, OutboundYTransforms.frozenDisposition(dig));

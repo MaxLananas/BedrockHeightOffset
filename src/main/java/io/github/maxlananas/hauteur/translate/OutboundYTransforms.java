@@ -51,13 +51,16 @@ public final class OutboundYTransforms {
     }
 
     /**
-     * Whether a player action names a block. Only the digging actions do. Geyser sends the others (dropping an
-     * item, releasing the held item, swapping hands, stab) with a zero position. That zero is not a block, so
-     * shifting it, holding it, or resolving it by plausibility would corrupt the packet or drop it.
+     * Whether a player action names a block in the frame the client wrote it in. The digging actions do. A drop
+     * does when Geyser takes it from the block-break action, which carries the client's block position; a drop
+     * from the inventory and the other actions (releasing the held item, swapping hands, stab) carry a zero
+     * position. Zero is not a block, so shifting it, holding it, or resolving it by plausibility would corrupt the
+     * packet or drop it.
      */
     private static boolean namesBlock(ServerboundPlayerActionPacket p) {
         return switch (p.getAction()) {
             case START_DIGGING, CANCEL_DIGGING, FINISH_DIGGING -> true;
+            case DROP_ITEM -> !p.getPosition().equals(Vector3i.ZERO);
             default -> false;
         };
     }

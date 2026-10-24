@@ -38,11 +38,12 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
   that freeze. Later ones were not re-checked, so the client could keep showing a block the server still has, and
   nothing counted them.
   The limit is now 256 positions (a few kilobytes), and anything beyond it is counted (`GHOST_OVERFLOWS`).
-- A player action that names no block (dropping an item, releasing the held item, swapping hands, stab) was shifted
-  by the window offset and, during a switch, held and resolved as a block action. Its zero position is not a block, so
-  the action was dropped when neither frame was plausible. The consequence (a released bow or food left in use on the
-  server) follows from the code and was not reproduced on a live server.
-  These actions are now sent unchanged and never held. Digging still names a block and is shifted and held as before.
+- A player action that names no block (releasing the held item, swapping hands, stab, and a drop from the inventory)
+  was shifted by the window offset and, during a switch, held and resolved as a block action. Geyser sends these with a
+  zero position, which is not a block, so the action was dropped when neither frame was plausible. The consequence (a
+  released bow or food left in use on the server) follows from the code and was not reproduced on a live server.
+  These are now sent unchanged and never held. Digging, and a drop taken from the block-break action (which carries the
+  client's block position), still name a block and are shifted and held as before.
 - The chunk cache evicted the oldest chunks to fit its budget without any record. Those chunks were then missing after a
   window switch, with no counter to explain it. Budget evictions are now counted (`CHUNK_EVICTED_BUDGET`, shown by
   `/hauteur stats`), and the README states the eviction rule.
