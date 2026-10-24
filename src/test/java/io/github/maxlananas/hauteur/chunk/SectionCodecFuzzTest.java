@@ -50,6 +50,37 @@ class SectionCodecFuzzTest {
         }
     }
 
+    /**
+     * Random bytes rarely look like a chunk. This one starts from valid sections and corrupts a few bytes or
+     * truncates the tail, which is what a damaged or hostile packet looks like to the parser.
+     */
+    @Test
+    void mutatedValidPayloadsNeverThrow() {
+        byte[] good = SectionCodecTest.singletonSection(5, 0);
+        Random rnd = new Random(99);
+        for (int trial = 0; trial < 2000; trial++) {
+            int sections = rnd.nextInt(1, 9);
+            byte[] payload = new byte[good.length * sections];
+            for (int s = 0; s < sections; s++) {
+                System.arraycopy(good, 0, payload, s * good.length, good.length);
+            }
+            int flips = rnd.nextInt(1, 6);
+            for (int f = 0; f < flips; f++) {
+                payload[rnd.nextInt(payload.length)] = (byte) rnd.nextInt(256);
+            }
+            if (rnd.nextBoolean()) {
+                payload = Arrays.copyOf(payload, rnd.nextInt(payload.length + 1));
+            }
+            byte[] input = payload; // effectively final for the lambda; payload was reassigned above
+            int inSections = sections;
+            int outSections = rnd.nextInt(1, 17);
+            int shift = rnd.nextInt(-4, 5);
+            SectionCodec.Result r =
+                assertDoesNotThrow(() -> SectionCodec.resliceTolerant(input, inSections, shift, outSections));
+            assertWellFormed(r.data(), outSections);
+        }
+    }
+
     @Test
     void truncatedStructuredSectionPadsWithAir() {
         byte[] good = SectionCodecTest.singletonSection(5, 0);
