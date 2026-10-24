@@ -17,8 +17,8 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
 ### What the JUnit suite covers
 
 - `session/ChunkCacheTest`: journal (latest state per position, block change supersedes block entity), strict
-  byte budget, oversized chunks, light data counted, journal overflow eviction, replacement, forget, resize,
-  nearest-first ordering.
+  byte budget, oversized chunks, light data counted, journal overflow eviction, budget evictions counted (on put
+  and on resize, not on clear), replacement, forget, resize, nearest-first ordering.
 - `pipeline/FrameResolverTest`: frame attribution for held movement and block actions; ambiguous and unplausible
   cases dropped; property test (20 000 random switches) that the resolver never selects the wrong frame.
 - `translate/PositionCoverageTest`: freeze disposition table, block-position extraction, absolute and relative
@@ -42,7 +42,9 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
   manager). It covers: passthrough at offset 0; a switch on high movement with the snap at `realY - offset`; a
   movement held across the freeze and replayed in the new frame; detach returning to real space (chunk replay,
   then snap at the last real Y); no snap on a closed channel; no switch when windowing is not needed, when the
-  extension is stopped, or without a player entity; no snap for a client that has not spawned.
+  extension is stopped, or without a player entity; no snap for a client that has not spawned. It also covers the
+  dropped-destroy re-check after a freeze: every destroy up to the limit is re-checked, and beyond it each one is
+  counted in `GHOST_OVERFLOWS`.
   The handler depends on the `PlayerSession`, `PipelineSettings` and `Diagnostics` interfaces, not on Geyser
   types, so these tests need no Geyser runtime.
 
