@@ -499,7 +499,14 @@ public final class HauteurHandler extends ChannelDuplexHandler {
             return;
         }
         try {
-            self.channel().eventLoop().execute(() -> performSwitch(realY, !authoritative, generation));
+            // Deferred: by the time this runs, the position and cooldown may be stale. Re-read the newest position
+            // and go through the policy again, instead of switching on the value captured at request time.
+            self.channel().eventLoop().execute(() -> {
+                state.switchQueued().set(false);
+                if (generation == state.worldGeneration()) {
+                    requestSwitch(state.lastSeenRealY(), authoritative);
+                }
+            });
         } catch (Throwable t) {
             state.switchQueued().set(false); // channel closing; never leave the latch stuck
         }

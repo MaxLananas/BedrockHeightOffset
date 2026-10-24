@@ -34,6 +34,9 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 
 ### Fixed
 
+- A window switch deferred to the event loop now re-reads the newest position and goes through the cooldown check
+  again, instead of switching on the position captured when it was requested.
+
 - `DEGRADED` status is now reported: `/hauteur info` and `doctor` show it when the pipeline never attached (after
   the retry budget, or when Geyser is not running). The flag was read but never set.
 
