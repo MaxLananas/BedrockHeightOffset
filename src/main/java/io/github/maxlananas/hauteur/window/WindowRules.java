@@ -61,12 +61,14 @@ public final class WindowRules {
      * without any hysteresis bookkeeping.
      */
     public static int targetOffset(double realY, int clientMinY, int clientHeight, int maxOffset) {
-        if (maxOffset <= 0) {
-            return 0;
+        if (maxOffset <= 0 || !Double.isFinite(realY)) {
+            return 0; // no usable position: keep the current frame's neutral choice
         }
         double centered = realY - (clientMinY + clientHeight / 2.0);
-        int snapped = (int) Math.floor(centered / SECTION + 0.5) * SECTION;
-        return Math.max(0, Math.min(maxOffset, snapped));
+        // Snap and clamp in double precision, then narrow. An int product overflowed for |realY| above about
+        // 2e9, which sent a far-away position to offset 0 while 1e10 went to the maximum.
+        double snapped = Math.floor(centered / SECTION + 0.5) * SECTION;
+        return (int) Math.max(0, Math.min(maxOffset, snapped));
     }
 
     /**

@@ -123,4 +123,14 @@ class WindowRulesTest {
         assertEquals(0, WindowRules.floorToSection(15));
         assertEquals(1440, WindowRules.floorToSection(1441));
     }
+
+    @Test
+    void targetOffsetIsTheSameForHugeHeightsAsForLargeOnes() {
+        // Regression: an int product overflowed above about 2e9 blocks and sent far positions to offset 0.
+        assertEquals(MAX_OFF, WindowRules.targetOffset(2.5e9, C_MIN, C_H, MAX_OFF));
+        assertEquals(MAX_OFF, WindowRules.targetOffset(1e10, C_MIN, C_H, MAX_OFF));
+        assertEquals(0, WindowRules.targetOffset(-1e10, C_MIN, C_H, MAX_OFF));
+        assertEquals(0, WindowRules.targetOffset(Double.NaN, C_MIN, C_H, MAX_OFF));
+        assertEquals(0, WindowRules.targetOffset(Double.POSITIVE_INFINITY, C_MIN, C_H, MAX_OFF));
+    }
 }
