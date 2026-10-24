@@ -48,16 +48,15 @@ Java-side logic. It is not evidence of how a Bedrock client behaves.
 
 ### What the JUnit suite does not cover
 
-- `HauteurCore` installation, the world-manager wrapper, and reload paths are not tested. They need a running Geyser.
-  `GeyserPlayerSession` and `GeyserDiagnostics` are thin delegations and are checked only by compilation and the
-  manual procedure.
+- The reflective installation of the world-manager wrapper (`HauteurCore.installShiftedWorldManager`) and the reload
+  paths are not tested. They need a running Geyser. `ShiftedWorldManagerTest` tests the wrapper's read logic, with
+  a stand-in delegate and both regimes (real world, session cache), not Geyser's own managers. `GeyserPlayerSession`
+  and `GeyserDiagnostics` are thin delegations and are checked only by compilation and the manual procedure.
 - No test runs a real packet stream through Geyser's translators, and no test runs against a real Bedrock client.
   The manual procedure, step 9, covers the detach path on a real client.
 
-- Test counts are read from the Surefire XML on each run and published as a check-run annotation. The last green
-  run on `1fe683a` (build runs 40028071418 for the pull request and 40028064897 for the push) reported 140 tests,
-  0 failures, 0 errors, 0 skipped. This is the only test count this document relies on; it changes with every test
-  added.
+- Test counts are read from the Surefire XML on each run and published as a check-run annotation on the commit. This
+  document does not copy them: the number changes with every test added, and a copied number goes stale.
 
 ## Manual procedure (not automated)
 
@@ -86,6 +85,18 @@ Minecraft Java and Bedrock versions, and the output of `/hauteur doctor` and `/h
     to be quarantined and reported by `/hauteur doctor` for that session, and no packet in the wrong frame.
 11. **Performance.** Measure a switch with a full view distance (for example 24 chunks). Record replay time on the
     event loop. No figure is claimed in the documentation until this is measured.
+12. **Actions in a shifted chunk.** Stand at altitude, above the window's first switch, and check each of these in
+    turn. Run the whole step three times: on a standalone Geyser without Erosion, on Geyser-Spigot, and on a
+    standalone Geyser with an Erosion backend. These use the world-manager reads, which differ by platform.
+    - Swim: enter water and leave it. Expect no sinking or bobbing at the surface, and the swim animation stops on exit.
+    - Climb: a ladder and a vine. Expect the climb to hold and to stop at the top.
+    - Place and break a block on the edge of the window. Expect the block to appear where it was placed.
+    - Open a chest, a door, a decorated pot. Expect each to open at the block that was clicked.
+    - Glide with an elytra, then land. Expect no collision correction on landing.
+    - Pick up a dropped item, and throw an ender pearl or a snowball. Expect the pickup and the landing point to match
+      the visible position.
+    - Get hit by a mob from above. Expect the hit direction to point at the attacker.
+    Record the Geyser build, the platform and any mismatch. Each mismatch is a bug report, not a note.
 
 ## Measured: chunk codec throughput (synthetic, not a server measurement)
 
