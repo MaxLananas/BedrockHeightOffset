@@ -82,7 +82,7 @@ whether another switch is needed. A teleport that arrived during the freeze is t
 - **Client movement** (`MovePlayerPos`, `MovePlayerPosRot`). Subject to the margin and the cooldown, except when the
   client is already outside its window: then the switch is not deferred (`window/SwitchPolicy`), because the view
   is missing content. Measured by simulation, not on a live client.
-- **Manual** (`/hauteur window`). Forced target, snap injected. Refused while the cooldown (times backoff) has not elapsed, so it cannot be used to replay the cache on every command.
+- **Manual** (`/hauteur window`). Forced target, snap injected. Refused while the cooldown (times backoff) has not elapsed, so it cannot be used to replay the cache on every command. The requested height must be within 4 blocks of the player's current height: the snap moves the client there, so any other value would be a vertical teleport.
 
 ### Journal
 

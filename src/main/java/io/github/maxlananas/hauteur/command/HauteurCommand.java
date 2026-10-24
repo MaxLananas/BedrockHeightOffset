@@ -19,6 +19,8 @@ import java.util.Map;
  * experiences.
  */
 public final class HauteurCommand {
+    /** How far from the player's current height a manual re-home may ask for, in blocks. */
+    static final double MANUAL_REHOME_TOLERANCE_BLOCKS = 4.0;
     private HauteurCommand() {
     }
 
@@ -83,7 +85,7 @@ public final class HauteurCommand {
             return;
         }
         if (args.length < 2) {
-            send(session, "§7Usage: §f/hauteur window <realY> §7(e.g. §f/hauteur window " + (state.window() != null ? state.window().javaMaxY() - 400 : 1500) + "§7)");
+            send(session, "§7Usage: §f/hauteur window <realY> §7(your current height, e.g. §f/hauteur window " + (int) state.lastSeenRealY() + "§7)");
             return;
         }
         double realY;
@@ -105,6 +107,14 @@ public final class HauteurCommand {
         // NaN and infinities are not positions; out-of-dimension values would snap the client outside the world.
         if (!w.acceptsRealY(realY)) {
             send(session, "§cReal Y must be a number from " + w.javaMinY() + " to " + (w.javaMaxY() - 1) + ".");
+            return;
+        }
+        // The re-home snaps the client to this height. It must be the height the player is at: otherwise the command
+        // is a vertical teleport to any height in the world, for any player.
+        double here = state.lastSeenRealY();
+        if (!Double.isFinite(here) || Math.abs(realY - here) > MANUAL_REHOME_TOLERANCE_BLOCKS) {
+            send(session, "§cReal Y must be within " + (int) MANUAL_REHOME_TOLERANCE_BLOCKS + " blocks of your current height ("
+                + (int) here + "). This command re-homes the window; it does not move you.");
             return;
         }
         if (!core.forceWindow(session, realY)) {
