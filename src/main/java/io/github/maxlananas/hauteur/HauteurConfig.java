@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Extension configuration, loaded from {@code <extensions data>/hauteur/config.properties}.
@@ -45,7 +46,7 @@ public final class HauteurConfig {
     /** 0 = derive from the dimension; set to force a lower cap (safety valve). */
     public int maxOffsetBlocks = 0;
     /** Chat commands whose absolute Y is rewritten. Empty string disables rewriting. */
-    public Set<String> rewriteCommands = parseCommandList(DEFAULT_REWRITE_COMMANDS);
+    public Set<String> rewriteCommands = parseCommandList(DEFAULT_REWRITE_COMMANDS, new ArrayList<>());
     /** Log one line per window switch (they are rare by construction). */
     public boolean logSwitches = true;
     /** Parse-time findings (invalid values, unknown keys); logged by the core, never fatal. */
@@ -86,7 +87,8 @@ public final class HauteurConfig {
             integer(props, "chunk-cache-max-megabytes", config.chunkCacheMaxMegabytes, warnings), 8, 1_024, warnings);
         config.maxOffsetBlocks = alignSection("max-offset-blocks",
             integer(props, "max-offset-blocks", config.maxOffsetBlocks, warnings), warnings);
-        config.rewriteCommands = parseCommandList(props.getProperty("rewrite-commands", DEFAULT_REWRITE_COMMANDS));
+        config.rewriteCommands = parseCommandList(props.getProperty("rewrite-commands", DEFAULT_REWRITE_COMMANDS),
+            warnings);
         config.logSwitches = bool(props, "log-switches", config.logSwitches, warnings);
         config.warnings = List.copyOf(warnings);
         return config;
@@ -117,20 +119,36 @@ public final class HauteurConfig {
             chunk-cache-max-megabytes=96
             # 0 = automatically cap the offset so the world top stays reachable.
             max-offset-blocks=0
-            # Chat commands whose absolute Y coordinate is rewritten into real space.
+            # Chat commands whose absolute Y coordinate is rewritten into real space. Names without the slash.
             # Leave empty to disable. Only unsigned commands are ever modified.
             rewrite-commands=tp,tppos,teleport
             log-switches=true
             """;
     }
 
-    /** Comma-separated command names: trimmed, lower-case, empty entries dropped. An empty list disables rewriting. */
-    private static Set<String> parseCommandList(String raw) {
+    /** A command name: lower-case letters, digits, '_' and '-'. */
+    private static final Pattern COMMAND_NAME = Pattern.compile("[a-z0-9_-]+");
+
+    /**
+     * Comma-separated command names: trimmed, lower-cased, a leading slash removed, empty entries dropped. An
+     * entry that is not a plain command name is reported and ignored. Without this, {@code /tp} was kept with its
+     * slash, never matched a message, and the rewrite was silently off.
+     */
+    private static Set<String> parseCommandList(String raw, List<String> warnings) {
         Set<String> out = new HashSet<>();
         for (String part : raw.split(",")) {
-            String name = part.trim().toLowerCase(Locale.ROOT);
-            if (!name.isEmpty()) {
+            String trimmed = part.trim();
+            String name = trimmed.toLowerCase(Locale.ROOT);
+            if (name.startsWith("/")) {
+                name = name.substring(1);
+            }
+            if (name.isEmpty()) {
+                continue;
+            }
+            if (COMMAND_NAME.matcher(name).matches()) {
                 out.add(name);
+            } else {
+                warnings.add("'rewrite-commands' entry '" + trimmed + "' is not a command name (ignored)");
             }
         }
         return Set.copyOf(out);

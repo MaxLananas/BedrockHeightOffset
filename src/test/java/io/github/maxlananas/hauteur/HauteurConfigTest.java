@@ -152,4 +152,12 @@ class HauteurConfigTest {
         assertEquals(Set.of("tp", "tppos", "teleport"), parse(dir, "enabled=true\n").rewriteCommands);
         assertEquals(HauteurConfig.loadDefault().rewriteCommands, parse(dir, "").rewriteCommands);
     }
+
+    @Test
+    void rewriteCommandsAcceptASlashAndReportInvalidNames(@TempDir Path dir) throws Exception {
+        // Regression: "/tp" kept its slash, never matched a message, and the rewrite was silently off.
+        HauteurConfig config = parse(dir, "rewrite-commands=/tp, tppos ,tp arg\n");
+        assertEquals(Set.of("tp", "tppos"), config.rewriteCommands);
+        assertTrue(config.warnings.stream().anyMatch(w -> w.contains("tp arg")), config.warnings.toString());
+    }
 }

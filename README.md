@@ -72,7 +72,7 @@ limit and the change is logged the same way. Most keys are reloaded with `/geyse
 | `chunk-cache-max-chunks` | `2048` | Maximum cached chunks per player (64–32768). |
 | `chunk-cache-max-megabytes` | `96` | Byte budget for cached chunks per player, strict (8–1024). |
 | `max-offset-blocks` | `0` | Cap on the offset, aligned down to 16. `0` derives it from the world. |
-| `rewrite-commands` | `tp,tppos,teleport` | Unsigned chat commands whose absolute Y is shifted. Empty disables it. |
+| `rewrite-commands` | `tp,tppos,teleport` | Unsigned chat commands whose absolute Y is shifted. Names without the slash; empty disables it. |
 | `log-switches` | `true` | One log line per switch. |
 
 ## Commands
