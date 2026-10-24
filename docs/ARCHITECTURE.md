@@ -18,6 +18,8 @@ realY   = clientY + O    (Java server)
   the client floor without making anything reachable.
 - The target offset centres the player in the window: `O* = snap16(clamp(realY - center, 0, Omax))`.
   Implemented in `window/WindowRules`, mirrored in `dev/verify/oracle.py`.
+- `O >= 0` by design, so a real Y below the client floor (`javaMinY < clientMinY`) cannot be shown at any offset.
+  That bottom slice stays unreachable for the player. `HauteurCore` logs it once per session at join.
 - If the real dimension fits the client window, `WindowConfig.needed` is false and the pipeline does nothing
   except watch login and respawn.
 
