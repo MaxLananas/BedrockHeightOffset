@@ -40,7 +40,7 @@ positions. Do not assume the two coexist.
 ## Installation
 
 1. Install Geyser on your server (see the [Geyser setup guide](https://geysermc.org/wiki/geyser/setup/)).
-2. Download `hauteur-<version>.jar` from the [releases page](https://github.com/MaxLananas/BedrockHeightOffset/releases) and verify it:
+2. Download `hauteur-<version>.jar` from the [releases page](https://github.com/MaxLananas/Hauteur/releases) and verify it:
    ```sh
    sha256sum -c SHA256SUMS.txt
    ```

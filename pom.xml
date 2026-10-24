@@ -11,7 +11,7 @@
 
     <name>Hauteur</name>
     <description>Hauteur: a Geyser extension that lets Bedrock players build at extreme Java-world heights without rubber-banding</description>
-    <url>https://github.com/MaxLananas/BedrockHeightOffset</url>
+    <url>https://github.com/MaxLananas/Hauteur</url>
     <inceptionYear>2026</inceptionYear>
 
     <licenses>
@@ -31,15 +31,15 @@
     </developers>
 
     <scm>
-        <url>https://github.com/MaxLananas/BedrockHeightOffset</url>
-        <connection>scm:git:https://github.com/MaxLananas/BedrockHeightOffset.git</connection>
-        <developerConnection>scm:git:ssh://git@github.com/MaxLananas/BedrockHeightOffset.git</developerConnection>
+        <url>https://github.com/MaxLananas/Hauteur</url>
+        <connection>scm:git:https://github.com/MaxLananas/Hauteur.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/MaxLananas/Hauteur.git</developerConnection>
         <tag>HEAD</tag>
     </scm>
 
     <issueManagement>
         <system>GitHub Issues</system>
-        <url>https://github.com/MaxLananas/BedrockHeightOffset/issues</url>
+        <url>https://github.com/MaxLananas/Hauteur/issues</url>
     </issueManagement>
 
     <properties>
