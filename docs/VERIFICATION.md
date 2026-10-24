@@ -120,10 +120,12 @@ shared and noisy, so read the ranges, not single values:
 | dense | 8.9 KB | 4.8 to 7.6 µs | 1.2 to 1.8 GB/s | 10 to 15 ms |
 
 Reading: the codec runs at memory-copy speed, so there is no algorithmic headroom to recover here. A switch
-replays every cached chunk (`replayWorld`), and that cost is bounded by the cache budget
-(`chunk-cache-max-megabytes`, default 96 MB): between roughly 50 and 100 ms of event-loop time when the cache
-is full, at the throughput range above. Real chunks are larger than these synthetic ones, so this is a floor,
-not an estimate for a live server. The replay also performs Netty pipeline writes, which this benchmark does
+replays every cached chunk (`replayWorld`). The cache is bounded by a chunk count (2048) and by a byte budget
+(`chunk-cache-max-megabytes`, default 96 MB). With the synthetic chunks above, the count limit binds first: a full
+cache holds about 8 MB (sparse) to 18 MB (dense), and its codec time is the 5 to 15 ms in the table. The byte budget
+would only bind for chunks averaging about 48 KiB or more, which was not measured; at the same throughput, 96 MB
+would take roughly 50 to 100 ms of codec time. Real chunks are larger than these synthetic ones, so the table is a
+floor, not an estimate for a live server. The replay also performs Netty pipeline writes, which this benchmark does
 not include.
 
 Not measured: the replay on a live server, `WindowedChunks` with real MCProtocolLib packets, packet translation
