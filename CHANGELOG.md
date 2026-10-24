@@ -34,6 +34,9 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 
 ### Fixed
 
+- `/hauteur window <Y>` now respects the switch cooldown and its backoff. Before, a player could repeat it as soon as
+  each freeze ended, and every switch resends the whole chunk cache to that client.
+
 - A window switch deferred to the event loop now re-reads the newest position and goes through the cooldown check
   again, instead of switching on the position captured when it was requested.
 

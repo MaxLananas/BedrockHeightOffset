@@ -492,7 +492,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         }
         long generation = state.worldGeneration();
         if (self.channel().eventLoop().inEventLoop()) {
-            performSwitch(realY, !authoritative, generation);
+            performSwitch(realY, !authoritative, generation, false);
             return;
         }
         if (!state.switchQueued().compareAndSet(false, true)) {
@@ -520,7 +520,7 @@ public final class HauteurHandler extends ChannelDuplexHandler {
      * @param injectSnap whether to snap the client; false when the triggering packet is itself the teleport
      * @param generation world generation the request was made in; a stale request is ignored
      */
-    private void performSwitch(double realY, boolean injectSnap, long generation) {
+    private void performSwitch(double realY, boolean injectSnap, long generation, boolean manual) {
         synchronized (freezeLock) {
             state.switchQueued().set(false);
             HauteurSession.WindowConfig w = state.window();
@@ -536,6 +536,11 @@ public final class HauteurHandler extends ChannelDuplexHandler {
                 return;
             }
             long now = System.currentTimeMillis();
+            // A manual re-home (/hauteur window) is not an automatic switch, but it still must not be a way to
+            // replay the whole cache on every command: each switch resends every cached chunk to the client.
+            if (manual && now - state.lastSwitchAtMs() < config.switchCooldownMs * Math.max(1, state.switchBackoff())) {
+                return;
+            }
             state.setSwitchBackoff(SwitchPolicy.nextBackoff(now, state.lastSwitchAtMs(), state.switchBackoff(),
                 config.switchCooldownMs));
 
@@ -575,9 +580,9 @@ public final class HauteurHandler extends ChannelDuplexHandler {
         }
         long generation = state.worldGeneration();
         if (self.channel().eventLoop().inEventLoop()) {
-            performSwitch(realY, true, generation);
+            performSwitch(realY, true, generation, true);
         } else {
-            self.channel().eventLoop().execute(() -> performSwitch(realY, true, generation));
+            self.channel().eventLoop().execute(() -> performSwitch(realY, true, generation, true));
         }
     }
 

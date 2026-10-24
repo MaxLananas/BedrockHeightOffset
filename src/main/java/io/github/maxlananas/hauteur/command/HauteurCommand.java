@@ -111,7 +111,7 @@ public final class HauteurCommand {
             send(session, "§cHauteur is not attached to this session; nothing to move.");
             return;
         }
-        send(session, "§aRe-homing the height window around real Y " + (int) realY + "§7... (offset will change; you will snap a little)");
+        send(session, "§aRe-homing requested around real Y " + (int) realY + "§7 (ignored if the last switch was within the cooldown; a switch makes you snap a little)");
     }
 
     private static void watch(GeyserSession session, HauteurSession state, String[] args) {
