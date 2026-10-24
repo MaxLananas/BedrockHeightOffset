@@ -83,7 +83,9 @@ limit and the change is logged the same way. Most keys are reloaded with `/geyse
 - `watch on|off`, `recent`: the last translated packets, for debugging.
 - `doctor`: attachment and world-manager status, packet types quarantined in this session, Geyser build.
 - `stats [reset]`: counters for this session (translations, replays, switches, held and dropped packets,
-  journal overflows, transform failures).
+  journal overflows, chunks evicted to fit the cache budget, dropped destroys that did not fit the re-check list,
+  transform failures). The counters that say "not replayed" or "not re-checked" are the ones to read first when a
+  player reports terrain or blocks that look wrong after a switch.
 - `window <realY>`: force a window switch around a real Y (builder tooling).
 
 ## Known limitations
