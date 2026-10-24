@@ -94,7 +94,7 @@ whose journal exceeds 4096 positions is evicted instead of being replayed stale.
 |---|---|---|
 | No absolute Y | Everything else (rotation, interaction, inventory, command requests without coordinates) | Transmit unchanged |
 | Movement | `MovePlayerPos`, `MovePlayerPosRot`, `MoveVehicle` | Hold if `freeze-hold-movement`, else drop |
-| Block-positioned action | `PlayerAction`, `UseItemOn`, `PickItemFromBlock`, `SignUpdate`, `SetCommandBlock`, `SetStructureBlock`, `SetJigsawBlock`, `JigsawGenerate`, `BlockEntityTagQuery`, `SetTestBlock`, `TestInstanceBlockAction` | Hold if `freeze-hold-actions`, else drop |
+| Block-positioned action | `PlayerAction` (digging, and a `DROP_ITEM` with a non-zero position), `UseItemOn`, `PickItemFromBlock`, `SignUpdate`, `SetCommandBlock`, `SetStructureBlock`, `SetJigsawBlock`, `JigsawGenerate`, `BlockEntityTagQuery`, `SetTestBlock`, `TestInstanceBlockAction` | Hold if `freeze-hold-actions`, else drop |
 | Unsigned command | `ChatCommandSigned` with no signatures | Drop (coordinates cannot be placed in a frame) |
 | Signed command | `ChatCommandSigned` with signatures | Transmit unchanged (never rewritten) |
 
