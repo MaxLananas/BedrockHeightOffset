@@ -77,4 +77,17 @@ class LogSanitizerTest {
             assertFalse(out.length() > LogSanitizer.MAX_NAME_LENGTH);
         }
     }
+
+    @Test
+    void combiningMarksAreCappedPerBaseCharacter() {
+        // A stacked "zalgo" name keeps three marks per base character; the rest become '?' and the name stays on one line.
+        String zalgo = "a" + "\u0301".repeat(20) + "b";
+        assertEquals("a" + "\u0301".repeat(3) + "?".repeat(17) + "b", LogSanitizer.playerName(zalgo));
+    }
+
+    @Test
+    void zeroWidthJoinerIsKeptForEmojiSequences() {
+        String family = "\uD83D\uDC68\u200D\uD83D\uDCBB";
+        assertEquals(family, LogSanitizer.playerName(family));
+    }
 }
