@@ -103,7 +103,7 @@ public final class HauteurCommand {
             return;
         }
         // NaN and infinities are not positions; out-of-dimension values would snap the client outside the world.
-        if (!Double.isFinite(realY) || realY < w.javaMinY() || realY >= w.javaMaxY()) {
+        if (!w.acceptsRealY(realY)) {
             send(session, "§cReal Y must be a number from " + w.javaMinY() + " to " + (w.javaMaxY() - 1) + ".");
             return;
         }

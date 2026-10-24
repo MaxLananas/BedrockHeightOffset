@@ -53,6 +53,11 @@ public final class HauteurSession {
         public boolean clientYVisible(int clientY) {
             return clientY >= clientMinY && clientY < clientMinY + clientHeight;
         }
+
+        /** A real Y a player may be moved to: finite, and inside the real dimension [javaMinY, javaMaxY). */
+        public boolean acceptsRealY(double realY) {
+            return Double.isFinite(realY) && realY >= javaMinY && realY < javaMaxY;
+        }
     }
 
     /**

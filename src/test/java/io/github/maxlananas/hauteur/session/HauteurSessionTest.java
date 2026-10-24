@@ -85,6 +85,20 @@ class HauteurSessionTest {
     }
 
     @Test
+    void forceWindowAcceptsOnlyFiniteRealYInsideTheDimension() {
+        // The real dimension is [-64, 1952). The command must not move a player outside it.
+        HauteurSession.WindowConfig w = HauteurSession.WindowConfig.of(-64, 1952, -512, 1024, 0);
+        assertTrue(w.acceptsRealY(-64), "the lowest block is accepted");
+        assertTrue(w.acceptsRealY(1951.9), "a fraction below the top is inside");
+        assertTrue(w.acceptsRealY(0));
+        assertFalse(w.acceptsRealY(-64.001), "just below the bottom is outside");
+        assertFalse(w.acceptsRealY(1952), "the top is exclusive");
+        assertFalse(w.acceptsRealY(Double.NaN), "NaN is not a position");
+        assertFalse(w.acceptsRealY(Double.POSITIVE_INFINITY));
+        assertFalse(w.acceptsRealY(Double.NEGATIVE_INFINITY));
+    }
+
+    @Test
     void budgetEvictionsReachTheSessionCounterExactlyOnce() {
         HauteurSession state = new HauteurSession(
             () -> HauteurSession.WindowConfig.of(-64, 1952, -512, 1024, 0), 64, 1 << 20);
