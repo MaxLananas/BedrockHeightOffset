@@ -37,7 +37,7 @@ Changes since 1.0.0. Not yet released; the version in `pom.xml` is `1.1.0-SNAPSH
 - A dropped destroy was recorded for the re-check after a switch only for the first eight distinct positions of
   that freeze. Later ones were not re-checked, so the client could keep showing a block the server still has, and
   nothing counted them.
-  The limit is now 256 positions (a few kilobytes), and anything beyond it is counted (`GHOST_OVERFLOWS`).
+  The limit is now 256 positions (about 16 KB, estimated), and anything beyond it is counted (`GHOST_OVERFLOWS`).
 - A player action that names no block (releasing the held item, swapping hands, stab, and a drop from the inventory)
   was shifted by the window offset and, during a switch, held and resolved as a block action. Geyser sends these with a
   zero position, which is not a block, so the action was dropped when neither frame was plausible. The consequence (a
