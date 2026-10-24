@@ -172,8 +172,14 @@ quarantined types with the first error, so that a deterministic failure can be d
 ## World manager wrapper
 
 `ShiftedWorldManager` wraps Geyser's `WorldManager`, so that direct, session-aware reads (collision correction,
-container checks, decorated pots) add the caller's offset. Installation is the only reflection point in the
-extension, and it is reported by `/hauteur doctor`.
+swimming and climbing checks, container checks, decorated pots) resolve through the caller's offset. Installation is
+the only reflection point in the extension, and it is reported by `/hauteur doctor`.
+
+The wrapper adds the offset only where Geyser reads the real world, and it uses Geyser's own rule for that: the
+platform owns its world (`hasOwnChunkCache()`, Geyser-Spigot) or the session's Erosion backend is active. Otherwise
+Geyser reads its session chunk cache, which already holds window-space chunks, and the read is passed through. The
+offset is therefore never applied twice. Async reads stay async, and batch reads stay one request, with the batch
+box shifted and the result indexed as before.
 
 ## What is not guaranteed
 

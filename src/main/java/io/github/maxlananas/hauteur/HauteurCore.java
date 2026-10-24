@@ -385,7 +385,8 @@ public final class HauteurCore implements PipelineSettings {
             if (!(current instanceof WorldManager manager)) {
                 throw new IllegalStateException("unexpected world manager: " + current);
             }
-            field.set(bootstrap, new ShiftedWorldManager(manager, this::currentOffset));
+            field.set(bootstrap,
+                new ShiftedWorldManager(manager, this::currentOffset, ShiftedWorldManager.readsRealWorld(manager)));
             this.worldManagerField = field;
             this.originalWorldManager = manager;
             worldManagerShifted = true;
